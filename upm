@@ -1,0 +1,21 @@
+#!/usr/bin/env node
+// The entry a clone runs: `./upm install`, what `npm run deps` and CI use.
+//
+// Plain JavaScript on purpose. A `.ts` entry makes Node start its TypeScript stripper
+// before the first line of it runs, and starting the stripper is most of the ~62 ms —
+// not the stripping. Reaching `enableCompileCache` first means every `src/*.ts` after
+// it comes back already stripped and the stripper never starts: a repeat install goes
+// from 115 ms to 61 ms. `dist/upm.mjs` turns the same cache on for the built program, where
+// it is worth 3 ms of a 30 ms `--help`; it stays the published `bin`.
+//
+// `getBuiltinModule` rather than `src/builtin.ts`, because importing that would be the
+// one TypeScript file this has to load before the cache is on. The cache sits beside the
+// store, not in `os.tmpdir()` where Node puts it by default — a shared `/tmp` can already
+// hold that directory owned by someone else. `NODE_DISABLE_COMPILE_CACHE=1` turns it off.
+const builtin = (id) => globalThis.process?.getBuiltinModule(id);
+const home = builtin("node:os")?.homedir();
+const cache = home && builtin("node:path").join(home, ".upm", "compile-cache");
+if (cache) builtin("node:module")?.enableCompileCache?.(cache);
+
+const { main } = await import("./src/cli.ts");
+globalThis.process.exitCode = await main(globalThis.process.argv.slice(2));

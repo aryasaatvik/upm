@@ -1,0 +1,32 @@
+name: checks
+on: { push: {}, pull_request: {} }
+jobs:
+  checks:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with: { node-version: lts/* }
+      # upm's own store, so a warm run links from cache instead of refetching.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.upm/store
+          key: upm-store-${{ runner.os }}-${{ hashFiles('upm.lock') }}
+          restore-keys: upm-store-${{ runner.os }}-
+      - run: node ./upm install --frozen-lockfile
+      # Extras run once, on Linux.
+      - if: runner.os == 'Linux'
+        run: npm run typecheck
+      - if: runner.os == 'Linux'
+        run: npx vitest --coverage
+      # Through npx, so the shell has to find the bin: a `.cmd` shim on Windows.
+      - if: runner.os != 'Linux'
+        run: npx vitest run
+      - if: runner.os == 'Linux'
+        run: npm run lint
+      # - uses: codecov/codecov-action@v5
+      #   with: { token: "${{ secrets.CODECOV_TOKEN }}" }

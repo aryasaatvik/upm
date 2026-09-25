@@ -1,0 +1,44 @@
+{
+  "name": "upm",
+  "version": "1.0.1",
+  "description": "A fast, tiny package manager for the npm registry, written in TypeScript.",
+  "license": "MIT",
+  "repository": "unjs/upm",
+  "bin": {
+    "upm": "./dist/upm.mjs",
+    "upx": "./dist/upx.mjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "types": "./dist/index.d.mts",
+  "exports": {
+    ".": "./dist/index.mjs",
+    "./resolver": "./dist/resolver.mjs"
+  },
+  "scripts": {
+    "build": "obuild",
+    "deps": "node ./upm install",
+    "dev": "vitest dev",
+    "fmt": "automd && oxlint . --fix && oxfmt .",
+    "lint": "oxlint . && oxfmt --check .",
+    "prepack": "npm run build",
+    "release": "npm test && npm run build && changelogen --release && npm publish && git push --follow-tags",
+    "test": "npm run lint && npm run typecheck && vitest run --coverage",
+    "typecheck": "tsc --noEmit --skipLibCheck"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@vitest/coverage-v8": "latest",
+    "automd": "latest",
+    "changelogen": "latest",
+    "jup": "latest",
+    "obuild": "latest",
+    "oxfmt": "latest",
+    "oxlint": "latest",
+    "typescript": "latest",
+    "vitest": "latest"
+  }
+}

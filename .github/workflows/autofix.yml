@@ -1,0 +1,20 @@
+name: autofix.ci
+on: { push: {}, pull_request: {} }
+permissions: { contents: read }
+jobs:
+  autofix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with: { node-version: lts/* }
+      - uses: actions/cache@v4
+        with:
+          path: ~/.upm/store
+          key: upm-store-${{ runner.os }}-${{ hashFiles('upm.lock') }}
+          restore-keys: upm-store-${{ runner.os }}-
+      # Not --frozen-lockfile: a stale upm.lock is refreshed here and committed below.
+      - run: node ./upm install
+      - run: npm run fmt
+      - uses: autofix-ci/action@7a166d7532b277f34e16238930461bf77f9d7ed8
+        with: { commit-message: "chore: apply automated updates" }

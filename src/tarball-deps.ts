@@ -1,0 +1,153 @@
+// What the commands do with tarball dependencies: read one into the store for the resolver,
+// name one `add` was given alone, and check the local ones against the lockfile. Its own
+// module, loaded by a command that meets a tarball, so no other pays for it at startup.
+import { builtin } from "./builtin.ts";
+import { LOCKFILE } from "./lock.ts";
+import type { Lockfile } from "./lock.ts";
+import { checkManifest } from "./package-json.ts";
+import { GROUPS } from "./resolve.ts";
+import type { ResolveOptions } from "./resolve.ts";
+import { parse } from "./semver.ts";
+import { tarballSource } from "./spec.ts";
+import { sameStamp, stampOf } from "./state.ts";
+import type { Stamp } from "./state.ts";
+import type { PackageIndex, Store, Tarball } from "./store.ts";
+import type { Manifest } from "./types.ts";
+import { describe } from "./util.ts";
+
+type Read = NonNullable<ResolveOptions["tarball"]>;
+
+/**
+ * A tarball dependency's package.json, with `dist` naming the source and the integrity of its
+ * bytes: into the store under their own hash, so the install that follows finds them there.
+ */
+export async function readTarball(
+  store: Store,
+  at: Tarball,
+  source: string,
+  pinned?: string,
+): Promise<Manifest> {
+  let read: { index: PackageIndex; integrity: string };
+  try {
+    // The bytes the lock pinned, when it did: the store's, or the source's only if they match.
+    read =
+      pinned === undefined
+        ? await store.adopt(at)
+        : { index: (await store.add(at, pinned)).index, integrity: pinned };
+  } catch (error) {
+    throw stale(error, source);
+  }
+  const where = `package.json of ${source}`;
+  const file = read.index.files.find((entry) => entry.path === "package.json");
+  if (!file) throw fail(`${source} has no package.json`, "EMANIFEST");
+  const text = await builtin.fsp.readFile(store.blobPath(file), "utf8");
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(text);
+  } catch (error) {
+    throw fail(`${where} is not valid JSON: ${(error as Error).message}`, "EMANIFEST");
+  }
+  // Written by hand, not checked by a registry: a peer range has to be a string to be read,
+  // and npm takes a bare string for a platform list.
+  checkManifest(manifest, where, [...GROUPS, "peerDependencies"]);
+  const m = manifest as Manifest;
+  for (const field of ["os", "cpu", "libc"] as const) {
+    const list: unknown = m[field];
+    if (typeof list === "string") m[field] = [list];
+    else if (
+      list !== undefined &&
+      !(Array.isArray(list) && list.every((x) => typeof x === "string"))
+    ) {
+      throw fail(`${where}: ${field} is not a list of names`, "EMANIFEST");
+    }
+  }
+  // The store names the entry by it, so it has to be a version and nothing else.
+  const exact = typeof m.version === "string" ? parse(m.version)?.version : undefined;
+  if (!exact) throw fail(`${where} has no valid version`, "EMANIFEST");
+  return { ...m, version: exact, dist: { tarball: source, integrity: read.integrity } };
+}
+
+/**
+ * The lockfile's local tarballs (`sources`, key -> source) whose file is no longer the bytes it
+ * pinned. One with the stamp the last install recorded is taken as the same; any other is read
+ * with `read`, once for the command, so a resolve that follows finds it read. One that is gone
+ * is left to the store: the lockfile still says what it held. `stamped` learns each stamp taken
+ * here that a later check can trust.
+ */
+export async function movedTarballs(
+  dir: string,
+  lock: Lockfile,
+  sources: Map<string, string>,
+  read: Read,
+  recorded: Record<string, Stamp | null>,
+  stamped: Map<string, Stamp>,
+  log: (message: string) => void,
+): Promise<string[]> {
+  const moved: string[] = [];
+  const checks = [...sources].map(async ([key, source]) => {
+    const stamp = stampOf(builtin.path.resolve(dir, source.slice("file:".length)));
+    if (!stamp) return;
+    if (sameStamp(stamp, recorded[source] ?? undefined)) {
+      stamped.set(source, stamp);
+      return;
+    }
+    if ((await read(source)).dist.integrity === lock.packages[key]!.integrity) return;
+    log(`${source} changed since ${LOCKFILE} locked it`);
+    moved.push(key);
+  });
+  await Promise.all(checks);
+  return moved.sort();
+}
+
+/**
+ * The name a tarball `add` was given alone calls itself. `file` is the package.json it goes
+ * in, under the root `dir`, which a path in `fetchSpec` is read from.
+ */
+export async function nameOf(
+  read: Read,
+  dir: string,
+  file: string,
+  raw: string,
+  fetchSpec: string,
+): Promise<string> {
+  const { dirname, relative } = builtin.path;
+  const base = relative(dir, dirname(file)).replaceAll("\\", "/");
+  const { name } = await read(tarballSource(fetchSpec, base));
+  if (typeof name !== "string" || !name) {
+    throw fail(`${raw} has no name in its package.json: add it as <name>@${raw}`, "EINVALIDSPEC");
+  }
+  return name;
+}
+
+/**
+ * A path `add` is given is the shell's, read from cwd. The package.json `file` keeps it from its
+ * own directory, which is where a path written there is read from.
+ */
+export function fromCwd(file: string, fetchSpec: string): string {
+  if (!fetchSpec.startsWith("file:")) return fetchSpec;
+  const { basename, dirname, join, relative, resolve } = builtin.path;
+  const at = resolve(fetchSpec.slice("file:".length));
+  // Both ends as the disk has them: cwd is always the real path, so a project reached through
+  // a link (macOS's /var is /private/var) would otherwise save a detour through the link.
+  const real = (path: string) => {
+    try {
+      return builtin.fs.realpathSync(path);
+    } catch {
+      return path;
+    }
+  };
+  const path = join(relative(real(dirname(file)), real(dirname(at))), basename(at));
+  return `file:${path.replaceAll("\\", "/")}`;
+}
+
+/** A tarball dependency whose bytes are not the ones the lockfile pinned: say which, and the way out. */
+export function stale(error: unknown, source: string): unknown {
+  if ((error as { code?: string }).code !== "EINTEGRITY") return error;
+  const why = `${source} changed since ${LOCKFILE} locked it (${describe(error)})`;
+  const message = `${why}; remove it and add it again to lock the new one`;
+  return Object.assign(new Error(message), { code: "EINTEGRITY", cause: error });
+}
+
+function fail(message: string, code: string): Error {
+  return Object.assign(new Error(message), { code });
+}
