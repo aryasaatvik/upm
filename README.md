@@ -205,24 +205,24 @@ const { code, results } = await run("build", {
 
 // Other exports
 import {
-  dedupe,          // re-resolve, preferring locked versions, then install
-  exec,            // run a package's bin, installing it if needed
-  fetchLockfile,   // fill the store from the lockfile, no linking
-  fetchPackages,   // resolve specs and fill the store, no linking
-  listScripts,     // list package.json scripts
-  prune,           // drop unused store and project entries
-  remove,          // remove dependencies, then install
+  dedupe, // re-resolve, preferring locked versions, then install
+  exec, // run a package's bin, installing it if needed
+  fetchLockfile, // fill the store from the lockfile, no linking
+  fetchPackages, // resolve specs and fill the store, no linking
+  listScripts, // list package.json scripts
+  prune, // drop unused store and project entries
+  remove, // remove dependencies, then install
 } from "upm";
 
 // Experimental resolver API (works in browser too)
 import {
-  createRegistry,  // registry client that fetches packuments
-  formatLockfile,  // lockfile object to text
-  fromLockfile,    // lockfile object to resolution
-  parseLockfile,   // lockfile text to object
-  parseSpec,       // parse a spec such as "vue@^3"
-  resolveTree,     // resolve a dependency tree
-  toLockfile,      // resolution to lockfile object
+  createRegistry, // registry client that fetches packuments
+  formatLockfile, // lockfile object to text
+  fromLockfile, // lockfile object to resolution
+  parseLockfile, // lockfile text to object
+  parseSpec, // parse a spec such as "vue@^3"
+  resolveTree, // resolve a dependency tree
+  toLockfile, // resolution to lockfile object
 } from "upm/resolver";
 ```
 
