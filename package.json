@@ -8,6 +8,9 @@
     "upm": "./dist/upm.mjs",
     "upx": "./dist/upx.mjs"
   },
+  "workspaces": [
+    "web"
+  ],
   "files": [
     "dist"
   ],
@@ -24,6 +27,7 @@
     "dev": "vitest dev",
     "fmt": "automd && oxlint . --fix && oxfmt .",
     "lint": "oxlint . && oxfmt --check .",
+    "web": "node ./upm run -w web dev",
     "prepack": "npm run build",
     "release": "npm test && npm run build && changelogen --release && npm publish && git push --follow-tags",
     "test": "npm run lint && npm run typecheck && vitest run --coverage",
