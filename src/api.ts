@@ -132,6 +132,10 @@ export interface RegistryAccess {
    * `npm_config_min_release_age`; 0 turns it off. Default: npm's config, else 1 day.
    */
   minReleaseAge?: number;
+  /** Pick only versions published before this date, over `minReleaseAge` and `.npmrc`. */
+  before?: string;
+  /** Names or globs the cutoff never applies to, in place of `.npmrc`'s list. */
+  minReleaseAgeExclude?: string[];
 }
 
 export interface StoreAccess {

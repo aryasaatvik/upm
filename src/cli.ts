@@ -39,9 +39,9 @@ const NPM = new Set(NPM_COMMANDS.trim().split(/,\s+/));
 const USAGE = `upm — a minimal npm-compatible package manager
 
 Usage
-  upm install [--production] [--frozen-lockfile] [--verify]    (also i)
+  upm install [--production] [--frozen-lockfile] [--verify]    (also i; ci is frozen)
   upm add <spec>... [--dev | --optional] [--exact] [-w <workspace>]
-  upm remove <name>... [-w <workspace>]
+  upm remove <name>... [-w <workspace>]    (also uninstall, rm, r, un)
   upm dedupe
   upm resolve <spec>...
   upm fetch <spec>...
@@ -49,6 +49,7 @@ Usage
   upm lock
   upm prune
   upm run [-w <workspace>... | --workspaces] [--if-present] [<script> [args...]]
+                       (also run-script; t and tst are run test)
   upm <script> [args...]
   upm exec [-p <spec>...] <command> [args...]
   upm exec [-p <spec>...] -c '<command line>'    (also upx)
@@ -57,19 +58,25 @@ Usage
 Options
   -c, --call <line>    exec: run a shell line with -p packages on PATH
   -D, --dev            add: save to devDependencies
+  --before <date>      pick only versions published before this date
   --dir <path>         project directory (default: nearest package.json or workspace root)
   -E, --exact          add: save an exact version for names and tags
   --min-release-age <days>
                        pick only versions published at least this long ago (0: off)
+  --min-release-age-exclude <name|glob>
+                       exempt from the release age (repeatable)
   --frozen-lockfile    install: fail if ${LOCKFILE} is missing or stale
-  --if-present        run: skip workspaces missing the script
-  --include-workspace-root run --workspaces: run the root first print JSON
+  --if-present         run: skip a missing script, or workspaces missing it
+  --include-workspace-root
+                       run --workspaces: run the root first
+  --json               print JSON
   --lock               fetch: use ${LOCKFILE}
   -O, --optional       add: save to optionalDependencies
   -p, --package <spec> exec: install a package for the command (repeatable)
   -y, --yes            exec: accepted for npx compatibility; no prompts
   --production         skip dev-only packages
   --registry <url>     override the registry
+  -s, --silent         no progress, run banner or install summary (also -q, --loglevel)
   --store <dir>        package store directory
   --verify             install: check sizes, links, bins and peers, not file contents
   -w, --workspace <name|path>
@@ -103,6 +110,11 @@ Notes
   run alone lists scripts; upm test = upm run test.
   exec (also upx) uses local bins, else installs into the root's node_modules/.upm/exec
   (or ~/.upm/exec) with the project registry. Use -p for packages, -c for a shell line.
+
+  npm's spellings work too: --save-dev, --save-optional, --save-exact, --omit=dev
+  (--production; --include=dev undoes it), --prefix and -C (--dir). Accepted and ignored,
+  as upm already behaves so: -S, --save, -P, --save-prod, --ignore-scripts, --no-audit,
+  --no-fund, --no-progress, --prefer-offline, --legacy-peer-deps and --force.
 
   Workspaces use package.json patterns. install/lock/dedupe/prune use the root and its .npmrc.
   add/remove target the current workspace or -w. Bare workspace names save ^version;
@@ -163,6 +175,12 @@ export interface Cli {
   call?: string;
   /** `-p`: with `exec`, the packages to install for the command. */
   packages?: string[];
+  /** `--before`: pick only versions published before this date. */
+  before?: string;
+  /** `--min-release-age-exclude`: names or globs the release age never holds back. */
+  minReleaseAgeExclude?: string[];
+  /** `-s`, `-q` or a low `--loglevel`: no progress notes, run banner or install summary. */
+  quiet?: boolean;
 }
 
 /** `resolvePool` left to the pool to size by the cores; the user did not ask for a count. */
@@ -184,9 +202,45 @@ const COMMANDS = new Set([
 const INSTALLS = new Set(["install", "add", "remove", "dedupe"]);
 /** The commands `-w` narrows. An install is the whole tree: its state describes one tree. */
 const SCOPED = new Set(["add", "remove", "run"]);
-/** Short names, as in npm: `upm i` is `upm install`. */
-const ALIASES: Record<string, string> = { i: "install" };
-const VALUE_FLAGS = { "--registry": "registry", "--store": "store", "--dir": "dir" } as const;
+/** npm's names for upm's commands: `upm i` is `upm install`, `upm ci` a frozen one. */
+const ALIASES: Record<string, string> = {
+  i: "install",
+  ci: "install",
+  "clean-install": "install",
+  uninstall: "remove",
+  rm: "remove",
+  r: "remove",
+  un: "remove",
+  "run-script": "run",
+};
+/** npm's short names for `run test`. */
+const TEST = new Set(["t", "tst"]);
+const VALUE_FLAGS = {
+  "--registry": "registry",
+  "--store": "store",
+  "--dir": "dir",
+  "--prefix": "dir",
+  "-C": "dir",
+} as const;
+/**
+ * npm's flags for what upm already does, or never does: no dependency lifecycle scripts, no
+ * audit or funding notes, no progress bar, no peer conflicts that fail an install.
+ */
+const NPM_NOOPS = new Set([
+  "--ignore-scripts",
+  "--no-audit",
+  "--no-fund",
+  "--no-progress",
+  "--prefer-offline",
+  "--legacy-peer-deps",
+  "--force",
+  "-S",
+  "--save",
+  "-P",
+  "--save-prod",
+]);
+/** npm's log levels. The first three leave only warnings and errors. */
+const LOG_LEVELS = ["silent", "error", "warn", "notice", "http", "info", "verbose", "silly"];
 
 export function parseArgv(argv: string[]): Cli {
   const cli: Cli = { specs: [], json: false, help: false };
@@ -196,6 +250,7 @@ export function parseArgv(argv: string[]): Cli {
   let rest = false;
   // `--` ends upm's own flags, so a script named `-x` is reachable: `upm run -- -x`.
   let flags = true;
+  let includeDev = false;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === undefined) continue;
@@ -234,6 +289,35 @@ export function parseArgv(argv: string[]): Cli {
       const value = eq === -1 ? argv[++i] : arg.slice(eq + 1);
       if (value === undefined) return { ...cli, error: `${flag} needs a value` };
       cli.call = value;
+    } else if (flag === "--before") {
+      const value = eq === -1 ? argv[++i] : arg.slice(eq + 1);
+      if (!value || Number.isNaN(Date.parse(value)))
+        return { ...cli, error: `${flag} takes a date` };
+      cli.before = value;
+    } else if (flag === "--min-release-age-exclude") {
+      const value = eq === -1 ? argv[++i] : arg.slice(eq + 1);
+      if (value === undefined) return { ...cli, error: `${flag} needs a value` };
+      (cli.minReleaseAgeExclude ??= []).push(value);
+    } else if (flag === "--omit" || flag === "--include") {
+      const value = eq === -1 ? argv[++i] : arg.slice(eq + 1);
+      if (flag === "--include" && ["dev", "prod", "optional", "peer"].includes(value!)) {
+        // npm: an include beats an omit, whatever the order.
+        if (value === "dev") includeDev = true;
+      } else if (flag === "--omit" && value === "dev") {
+        cli.production = true;
+      } else {
+        const takes = flag === "--omit" ? "dev" : "dev, prod, optional or peer";
+        return { ...cli, error: `${flag} takes ${takes}` };
+      }
+    } else if (flag === "--loglevel") {
+      const value = eq === -1 ? argv[++i] : arg.slice(eq + 1);
+      const level = LOG_LEVELS.indexOf(value!);
+      if (level === -1) return { ...cli, error: `${flag} takes ${LOG_LEVELS.join(", ")}` };
+      if (level < 3) cli.quiet = true;
+    } else if (arg === "-s" || arg === "--silent" || arg === "-q" || arg === "--quiet") {
+      cli.quiet = true;
+    } else if (NPM_NOOPS.has(arg)) {
+      // Accepted so npm's command lines run unchanged.
     } else if (flag === "--min-release-age") {
       const value = eq === -1 ? argv[++i] : arg.slice(eq + 1);
       const days = value?.trim() ? Number(value) : Number.NaN;
@@ -263,11 +347,11 @@ export function parseArgv(argv: string[]): Cli {
       cli.frozen = true;
     } else if (arg === "--verify") {
       cli.verify = true;
-    } else if (arg === "--dev" || arg === "-D") {
+    } else if (arg === "--dev" || arg === "-D" || arg === "--save-dev") {
       cli.dev = true;
-    } else if (arg === "--optional" || arg === "-O") {
+    } else if (arg === "--optional" || arg === "-O" || arg === "--save-optional") {
       cli.optional = true;
-    } else if (arg === "--exact" || arg === "-E") {
+    } else if (arg === "--exact" || arg === "-E" || arg === "--save-exact") {
       cli.exact = true;
     } else if (flag === "--experimental-link-pool") {
       const pool = parseLinkPool(eq === -1 ? "" : arg.slice(eq + 1));
@@ -279,6 +363,7 @@ export function parseArgv(argv: string[]): Cli {
       positional(cli, arg);
     }
   }
+  if (includeDev) delete cli.production;
   return cli;
 }
 
@@ -315,6 +400,10 @@ function positional(cli: Cli, arg: string): void {
     cli.specs.push(arg);
   } else if (Object.hasOwn(ALIASES, arg)) {
     cli.command = ALIASES[arg];
+    if (arg === "ci" || arg === "clean-install") cli.frozen = true;
+  } else if (TEST.has(arg)) {
+    cli.command = "run";
+    cli.specs.push("test");
   } else if (COMMANDS.has(arg) || NPM.has(arg)) {
     cli.command = arg;
   } else {
@@ -337,6 +426,7 @@ export async function main(argv: string[]): Promise<number> {
   const cli = parseArgv(argv);
   trace("argv");
   if (cli.error) return usage(cli.error);
+  quiet = cli.quiet === true;
   if (cli.help || cli.command === undefined) {
     write("stdout", `${help("stdout")}\n`);
     return 0;
@@ -417,8 +507,9 @@ export async function main(argv: string[]): Promise<number> {
     );
   }
   if (cli.workspace && cli.workspaces) return usage("-w and --workspaces are exclusive");
-  if ((cli.ifPresent || cli.includeRoot) && !(cli.command === "run" && selects)) {
-    return usage("--if-present and --include-workspace-root only apply to run -w or --workspaces");
+  if (cli.ifPresent && cli.command !== "run") return usage("--if-present only applies to run");
+  if (cli.includeRoot && !(cli.command === "run" && selects)) {
+    return usage("--include-workspace-root only applies to run -w or --workspaces");
   }
 
   try {
@@ -427,7 +518,9 @@ export async function main(argv: string[]): Promise<number> {
     if (cli.command === "exec") return await execCommand(cli);
     const out = await dispatch(cli, fromProject);
     trace("formatted");
-    if (out) write("stdout", `${out}\n`);
+    // Quiet drops an install's summary, not what a command is asked to print.
+    const summary = !cli.json && (installs || cli.command === "prune" || cli.command === "fetch");
+    if (out && !(quiet && summary)) write("stdout", `${out}\n`);
     return 0;
   } catch (error) {
     fail(describe(error));
@@ -440,6 +533,8 @@ async function dispatch(cli: Cli, fromProject: boolean): Promise<string> {
     dir: cli.dir,
     registry: cli.registry,
     minReleaseAge: cli.minReleaseAge,
+    before: cli.before,
+    minReleaseAgeExclude: cli.minReleaseAgeExclude,
     log: note,
   };
   const store = { ...base, store: cli.store };
@@ -537,6 +632,7 @@ async function runCommand(cli: Cli): Promise<number> {
     log: note,
     // What runs, on stderr, so the script's own stdout is all there is to pipe.
     onScript: ({ script, line, workspace }) => {
+      if (quiet) return;
       const at = workspace === undefined ? "" : `${workspace}: `;
       write("stderr", `${paint("gray", `> ${at}${script}\n> ${line}`)}\n`);
     },
@@ -570,7 +666,7 @@ async function runCommand(cli: Cli): Promise<number> {
     throw error;
   }
   const own = result.results[0];
-  if (selects || !own?.missing) return result.code;
+  if (selects || cli.ifPresent || !own?.missing) return result.code;
   const names = Object.keys((await listScripts({ dir: cli.dir }))[0]!.scripts);
   const have = names.length > 0 ? ` — the scripts are ${names.join(", ")}` : "";
   if (cli.implied)
@@ -586,6 +682,8 @@ async function execCommand(cli: Cli): Promise<number> {
     dir: cli.dir,
     registry: cli.registry,
     minReleaseAge: cli.minReleaseAge,
+    before: cli.before,
+    minReleaseAgeExclude: cli.minReleaseAgeExclude,
     store: cli.store,
     packages: cli.packages,
     call: cli.call !== undefined,
@@ -642,8 +740,12 @@ function size(bytes: number): string {
 /** `UPM_DEBUG`: one form, like every other switch here; `UPM_DEBUG=0` is not "on". */
 const DEBUG = new Set(["1", "on"]);
 
+/** `-s`, `-q` or a low `--loglevel`: `note` keeps only warnings. */
+let quiet = false;
+
 /** Summaries go to stderr, so `--json` keeps stdout clean. `debug` only under `UPM_DEBUG`. */
 function note(message: string, level: LogLevel = "info"): void {
+  if (quiet && level === "info") return;
   if (level === "debug") {
     if (!DEBUG.has(globalThis.process?.env?.UPM_DEBUG ?? "")) return;
     write("stderr", `${paint("gray", `upm: ${message}`)}\n`);

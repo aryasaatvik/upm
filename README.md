@@ -176,6 +176,7 @@ Credentials in `.npmrc` are sent to a URL on the same host, as for a registry.
 ```sh
 upm install --frozen-lockfile
 upm install --production --frozen-lockfile
+upm ci --omit=dev                    # the same, in npm's words
 ```
 
 `--frozen-lockfile` fails if `upm.lock` is missing, invalid, or out of date with the
@@ -227,6 +228,7 @@ upm run build
 upm test --watch           # short for upm run test --watch
 upm run test -- --watch    # the first -- is optional
 upm run --dir ./app build
+upm run --if-present lint  # no lint script is not an error
 ```
 
 Scripts run in a shell from the selected package directory. Local
@@ -296,9 +298,28 @@ of these names. They run with npm's `workspaces-update` off, so `version` and `i
 in a workspace never let npm install the tree.
 
 npm reads the same `.npmrc` files, so `upm login` stores a token upm uses too.
-Commands that read or change the installed tree, such as `ls`, `outdated`, `audit`,
-`update` or `ci`, are not passed on: npm does not understand upm's `node_modules`
+Commands that read or change the installed tree, such as `ls`, `outdated`, `audit`
+or `update`, are not passed on: npm does not understand upm's `node_modules`
 layout or `upm.lock`.
+
+### npm's command lines
+
+Most npm install and run lines work as they are:
+
+- `upm ci` is `upm install --frozen-lockfile`. `uninstall`, `rm`, `r` and `un` are
+  `remove`; `run-script` is `run`; `t` and `tst` are `upm run test`.
+- `--save-dev`, `--save-optional` and `--save-exact` are `-D`, `-O` and `-E`.
+  `--omit=dev` is `--production`, and `--include=dev` undoes either.
+  `--prefix <dir>` and `-C <dir>` are `--dir`.
+- `-s`, `--silent`, `-q`, `--quiet` and `--loglevel` set to `silent`, `error` or `warn`
+  hide progress, the script banner and the install summary. Warnings and errors stay.
+- These are accepted and do nothing, since upm already works this way: `-S`, `--save`,
+  `-P`, `--save-prod`, `--ignore-scripts`, `--no-audit`, `--no-fund`, `--no-progress`,
+  `--prefer-offline`, `--legacy-peer-deps` and `--force`.
+
+Flags still go before the script name: `npm run build --if-present` hands
+`--if-present` to npm, but `upm run build --if-present` passes it to the script.
+Write `upm run --if-present build`.
 
 ## Workspaces
 
@@ -397,7 +418,7 @@ Settings are read in this order, with later values taking priority:
 3. Project config: `.npmrc` at the project root.
 4. Environment variables such as `npm_config_registry` and `npm_config_save_exact`.
 5. The `--registry <url>` option, for the default registry only, and
-   `--min-release-age <days>`.
+   `--min-release-age <days>`, `--before <date>` and `--min-release-age-exclude <glob>`.
 
 A scope's registry still takes priority for packages in that scope, even with
 `--registry`. `UPM_REGISTRY` is a fallback when `npm_config_registry` is not set.

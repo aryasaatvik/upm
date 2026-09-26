@@ -192,7 +192,12 @@ function hostOf(url: string): string | undefined {
  */
 export function readConfig(
   dir: string,
-  flags: { registry?: string; minReleaseAge?: number } = {},
+  flags: {
+    registry?: string;
+    minReleaseAge?: number;
+    before?: string;
+    minReleaseAgeExclude?: string[];
+  } = {},
   home = builtin.os.homedir(),
 ): Config {
   const env = globalThis.process?.env ?? {};
@@ -210,6 +215,10 @@ export function readConfig(
   const project = parseNpmrc(read(builtin.path.join(dir, NPMRC)), env);
   const cli: Record<string, string> = {};
   if (flags.minReleaseAge !== undefined) cli["min-release-age"] = `${flags.minReleaseAge}`;
+  if (flags.before !== undefined) cli.before = flags.before;
+  if (flags.minReleaseAgeExclude) {
+    cli["min-release-age-exclude"] = flags.minReleaseAgeExclude.join(",");
+  }
   return toConfig([global, user, project, fromEnv, cli], flags.registry);
 }
 

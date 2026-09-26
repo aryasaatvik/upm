@@ -162,6 +162,90 @@ describe("parseArgv", () => {
   });
 });
 
+describe("npm's spellings", () => {
+  it("reads npm's command names", () => {
+    expect(parseArgv(["ci"])).toMatchObject({ command: "install", frozen: true });
+    expect(parseArgv(["clean-install"])).toMatchObject({ command: "install", frozen: true });
+    for (const name of ["uninstall", "rm", "r", "un"]) {
+      expect(parseArgv([name, "vue"])).toMatchObject({ command: "remove", specs: ["vue"] });
+    }
+    expect(parseArgv(["run-script", "build", "-x"])).toMatchObject({
+      command: "run",
+      specs: ["build", "-x"],
+    });
+    expect(parseArgv(["t", "--watch"])).toMatchObject({
+      command: "run",
+      specs: ["test", "--watch"],
+    });
+    expect(parseArgv(["tst"])).toMatchObject({ command: "run", specs: ["test"] });
+    expect(parseArgv(["tst"]).implied).toBeUndefined();
+  });
+
+  it("reads npm's save flags as upm's", () => {
+    expect(parseArgv(["add", "x", "--save-dev", "--save-exact"])).toMatchObject({
+      dev: true,
+      exact: true,
+    });
+    expect(parseArgv(["add", "x", "--save-optional"]).optional).toBe(true);
+  });
+
+  it("reads --omit=dev as --production, and --include=dev over it in any order", () => {
+    expect(parseArgv(["ci", "--omit=dev"]).production).toBe(true);
+    expect(parseArgv(["ci", "--omit", "dev"]).production).toBe(true);
+    expect(parseArgv(["ci", "--include=dev", "--omit=dev"]).production).toBeUndefined();
+    expect(parseArgv(["ci", "--production", "--include", "dev"]).production).toBeUndefined();
+    expect(parseArgv(["ci", "--include=optional"]).error).toBeUndefined();
+    expect(parseArgv(["ci", "--omit=optional"]).error).toBe("--omit takes dev");
+    expect(parseArgv(["ci", "--omit"]).error).toBe("--omit takes dev");
+    expect(parseArgv(["ci", "--include=all"]).error).toBe(
+      "--include takes dev, prod, optional or peer",
+    );
+  });
+
+  it("reads --prefix and -C as --dir", () => {
+    expect(parseArgv(["--prefix", "/x", "ci"]).dir).toBe("/x");
+    expect(parseArgv(["-C", "/x", "ci"]).dir).toBe("/x");
+    expect(parseArgv(["ci", "--prefix=/y"]).dir).toBe("/y");
+  });
+
+  it("reads --before as a date and every --min-release-age-exclude", () => {
+    expect(parseArgv(["ci", "--before", "2024-01-02"]).before).toBe("2024-01-02");
+    expect(parseArgv(["ci", "--before=someday"]).error).toBe("--before takes a date");
+    expect(parseArgv(["ci", "--before"]).error).toBe("--before takes a date");
+    const cli = parseArgv([
+      "ci",
+      "--min-release-age-exclude",
+      "a",
+      "--min-release-age-exclude=@b/*",
+    ]);
+    expect(cli.minReleaseAgeExclude).toEqual(["a", "@b/*"]);
+  });
+
+  it("accepts npm's flags for what upm already does, and nothing else", () => {
+    const noops = ["--ignore-scripts", "--no-audit", "--no-fund", "--no-progress"];
+    noops.push("--prefer-offline", "--legacy-peer-deps", "--force", "-S", "--save", "-P");
+    noops.push("--save-prod");
+    expect(parseArgv(["add", "x", ...noops])).toEqual({
+      command: "add",
+      specs: ["x"],
+      json: false,
+      help: false,
+    });
+    expect(parseArgv(["ci", "--no-save"]).error).toBe('unknown flag "--no-save"');
+  });
+
+  it("reads -s, -q and a low --loglevel as quiet", () => {
+    for (const flag of ["-s", "--silent", "-q", "--quiet", "--loglevel=warn"]) {
+      expect(parseArgv(["ci", flag]).quiet).toBe(true);
+    }
+    expect(parseArgv(["ci", "--loglevel", "error"]).quiet).toBe(true);
+    expect(parseArgv(["ci", "--loglevel", "verbose"]).quiet).toBeUndefined();
+    expect(parseArgv(["ci", "--loglevel", "loud"]).error).toMatch(/^--loglevel takes silent/);
+    // After the script name, as ever, it is the script's.
+    expect(parseArgv(["run", "build", "-s"])).toMatchObject({ specs: ["build", "-s"] });
+  });
+});
+
 describe("cli process", () => {
   it("prints usage and exits 0 with no args", async () => {
     const { stdout } = await run(process.execPath, [CLI]);
@@ -466,6 +550,16 @@ describe("run", () => {
   it("lists the scripts without a name", async () => {
     expect(await upm()).toMatchObject({ code: 0, stdout: "hi\n  hello one\npwd\n  pwd\n" });
     expect(JSON.parse((await upm("--json")).stdout)).toEqual({ hi: "hello one", pwd: "pwd" });
+  });
+
+  it("passes over a missing script under --if-present", async () => {
+    expect(await upm("--if-present", "nope")).toMatchObject({ code: 0, stdout: "", stderr: "" });
+  });
+
+  it.skipIf(process.platform === "win32")("prints no banner under -s", async () => {
+    const result = await upm("-s", "pwd");
+    expect(result).toMatchObject({ code: 0, stderr: "" });
+    expect(result.stdout.trim()).toBe(await realpath(dir));
   });
 
   it("names the scripts there are when one is missing", async () => {
@@ -856,11 +950,13 @@ describe("startup budget", () => {
     // -1.0 and +1.6 ms of main's 108 ms); 417,320 once `cli.ts` and `upm.ts` swapped names and
     // four modules took longer ones, the same modules (paired medians -0.0 and +2.6 ms in two
     // orders, an A/A pair +1.0 ms on the same busy box); 417,747 once a failed link waits for
-    // its other builds, the same modules (paired median +0.1 ms, an A/A pair +0.8 ms).
+    // its other builds, the same modules (paired median +0.1 ms, an A/A pair +0.8 ms); 422,633
+    // with npm's command names and flags, the same modules (paired medians -1.7 and -1.0 ms in
+    // two orders, an A/A pair -0.2 ms).
     const modules = await reachable();
     const bytes = [...modules.values()].reduce((total, size) => total + size, 0);
     expect(modules.size).toBeLessThanOrEqual(27); // `upm.ts` is the bin, `cli.ts` the program
-    expect(bytes).toBeLessThanOrEqual(418_000);
+    expect(bytes).toBeLessThanOrEqual(423_000);
     // Found through `import()` by the commands that read a project, like the pools: each holds
     // its worker's whole code in the build.
     const lazy = [

@@ -191,7 +191,7 @@ describe("install", () => {
     expect(await upm("", "install", "--workspaces")).toMatchObject({ code: 2 });
     expect(await upm("", "lock", "-w", "a")).toMatchObject({ code: 2 });
     expect(await upm("", "install", "--if-present")).toMatchObject({ code: 2 });
-    expect(await upm("", "run", "--if-present", "build")).toMatchObject({ code: 2 });
+    expect(await upm("", "run", "--include-workspace-root", "build")).toMatchObject({ code: 2 });
     expect(await upm("", "add", "c", "--include-workspace-root")).toMatchObject({ code: 2 });
     expect(await upm("", "run", "-w", "a", "--workspaces", "build")).toMatchObject({ code: 2 });
     expect(await upm("", "run", "-w")).toMatchObject({ code: 2 });

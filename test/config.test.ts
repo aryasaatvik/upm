@@ -308,6 +308,19 @@ describe("readConfig", () => {
     expect(readConfig(dir, { registry: "https://flag.test" }).registry).toBe("https://flag.test");
   });
 
+  it("takes --before and --min-release-age-exclude over the files", async () => {
+    dir = await mkdtemp(join(tmpdir(), "upm-npmrc-"));
+    isolate();
+    await writeFile(join(dir, ".npmrc"), "min-release-age=3\nmin-release-age-exclude[]=@acme/*\n");
+    const date = "2024-01-02T03:04:05Z";
+    const flags = { minReleaseAge: 5, before: date, minReleaseAgeExclude: ["a", "b"] };
+    expect(readConfig(dir, flags)).toMatchObject({
+      before: Date.parse(date),
+      releaseAgeExclude: ["a", "b"],
+    });
+    expect(readConfig(dir).releaseAgeExclude).toEqual(["@acme/*"]);
+  });
+
   it("finds the global file under the prefix, as npm's --location=global writes it", async () => {
     dir = await mkdtemp(join(tmpdir(), "upm-npmrc-"));
     isolate();
