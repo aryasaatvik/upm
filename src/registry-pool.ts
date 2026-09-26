@@ -268,7 +268,8 @@ export function createRegistryPool(options: PoolOptions = {}): RegistryPool {
           if (!slot.pending.delete(id)) return;
           if (slot.pending.size === 0) slot.worker.unref();
           here(question).then(resolve, reject);
-        }, options.graceMs ?? GRACE_MS).unref();
+        }, options.graceMs ?? GRACE_MS);
+        job.grace.unref?.();
       }
       slot.pending.set(id, job);
       slot.worker.ref();
