@@ -8,6 +8,11 @@ import { builtin } from "./builtin.ts";
 /** Whether `builtin.ts` can hand out Node modules. False in a browser, a worker with no Node. */
 export const hasNode = typeof globalThis.process?.getBuiltinModule === "function";
 
+// A browser's `process` shim may hand out `fs` alone: crypto and zlib are asked for on first use.
+const found: Record<string, boolean> = {};
+const has = (id: string) => (found[id] ??= hasNode && !!globalThis.process.getBuiltinModule(id));
+export const hasZlib = () => has("node:zlib");
+
 const buffer = (globalThis as { Buffer?: typeof Buffer }).Buffer;
 
 /** One array out of many, always a copy. `total` saves a pass when the caller has counted. */
@@ -77,7 +82,7 @@ export interface Hasher {
  * on Node the promise is already settled and costs a microtask.
  */
 export function createHasher(algorithm: Algorithm): Hasher {
-  if (hasNode) {
+  if (has("node:crypto")) {
     const hash = builtin.crypto.createHash(algorithm);
     return {
       update: (chunk) => void hash.update(chunk),
@@ -97,7 +102,7 @@ export function createHasher(algorithm: Algorithm): Hasher {
  * microseconds, so a caller with many buffers should start them all and await once.
  */
 export async function digest(algorithm: Algorithm, data: Uint8Array): Promise<Uint8Array> {
-  if (hasNode) return builtin.crypto.hash(algorithm, data, "buffer");
+  if (has("node:crypto")) return builtin.crypto.hash(algorithm, data, "buffer");
   return new Uint8Array(await crypto.subtle.digest(WEB_NAMES[algorithm], data as BufferSource));
 }
 
@@ -109,7 +114,7 @@ export async function digest(algorithm: Algorithm, data: Uint8Array): Promise<Ui
  * no SHAKE, and a truncated sha256 is every bit as good at telling two subgraphs apart.
  */
 export async function shortHash(text: string): Promise<string> {
-  const bytes = hasNode
+  const bytes = has("node:crypto")
     ? builtin.crypto.hash("sha256", text, "buffer")
     : await digest("sha256", new TextEncoder().encode(text));
   return toBase64Url(bytes.subarray(0, 16));

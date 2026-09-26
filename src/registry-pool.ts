@@ -140,10 +140,12 @@ export function createRegistryPool(options: PoolOptions = {}): RegistryPool {
     if (size === 0) return;
     trace("reg-start");
     // A thread still silent when this fires is terminated, and its `exit` retires it as a
-    // thread that never loaded; nothing was handed to it. Never holds the process open.
+    // thread that never loaded; nothing was handed to it. Never holds the process open. A
+    // browser's timer is a number, with nothing to unref, and its `Worker` is not this one.
     boot = setTimeout(() => {
       for (const slot of slots) if (slot && !slot.ready) void slot.worker.terminate();
-    }, options.bootMs ?? BOOT_MS).unref();
+    }, options.bootMs ?? BOOT_MS);
+    boot.unref?.();
     const max = options.concurrency ?? 32;
     const start = options.start ?? 16;
     const min = shares(options.min ?? 4, size);

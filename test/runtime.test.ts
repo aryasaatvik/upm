@@ -196,6 +196,64 @@ describe("without Node", () => {
     await expect(wrong.verify()).rejects.toMatchObject({ code: "EINTEGRITY" });
   });
 
+  it("a process that hands out fs alone hashes and inflates the web way", async () => {
+    // A browser's `process` shim: `getBuiltinModule` is there, Node's crypto and zlib are not.
+    // Both are asked for on first use, so the shim stays in place until each has been.
+    const shim = Object.create(process, {
+      getBuiltinModule: { value: (id: string) => (id === "node:fs" ? fs : undefined) },
+    }) as typeof process;
+    const node = await import("../src/runtime.ts");
+    const expected = await node.shortHash("key");
+    vi.resetModules();
+    const subtle = vi.spyOn(crypto.subtle, "digest");
+    const inflate = vi.spyOn(globalThis, "DecompressionStream");
+    vi.stubGlobal("process", shim);
+    try {
+      const web = await import("../src/runtime.ts");
+      const { extractTar } = await import("../src/tar.ts");
+      expect(web.hasNode).toBe(true);
+      const data = Buffer.from("the quick brown fox");
+      expect(Buffer.from(await web.digest("sha512", data))).toEqual(
+        createHash("sha512").update(data).digest(),
+      );
+      const hasher = web.createHasher("sha1");
+      hasher.update(data);
+      expect(Buffer.from(await hasher.digest())).toEqual(createHash("sha1").update(data).digest());
+      expect(await web.shortHash("key")).toBe(expected);
+      expect(subtle).toHaveBeenCalledTimes(3);
+
+      // One small block: where Node would take the one-shot gunzipSync.
+      const entries = [];
+      for await (const entry of extractTar(once(tarOf("a.js", "hi")))) entries.push(entry.path);
+      expect(entries).toEqual(["a.js"]);
+      expect(inflate).toHaveBeenCalledTimes(1);
+      expect(web.hasZlib()).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("Node keeps its own crypto and zlib", async () => {
+    const node = await import("../src/runtime.ts");
+    const { extractTar } = await import("../src/tar.ts");
+    const subtle = vi.spyOn(crypto.subtle, "digest");
+    const inflate = vi.spyOn(globalThis, "DecompressionStream");
+    await node.digest("sha512", Buffer.from("x"));
+    await node.shortHash("x");
+    const hasher = node.createHasher("sha256");
+    hasher.update(Buffer.from("x"));
+    await hasher.digest();
+    const big = tarOf("b.js", "x".repeat(4 << 20)); // past the one-shot size: the zlib stream
+    for (const tarball of [tarOf("a.js", "hi"), big]) {
+      for await (const _ of extractTar(once(tarball))) {
+        // drain
+      }
+    }
+    expect(node.hasZlib()).toBe(true);
+    expect(subtle).not.toHaveBeenCalled();
+    expect(inflate).not.toHaveBeenCalled();
+  });
+
   it("pickManifest accepts every engine when there is no Node version", async () => {
     vi.resetModules();
     vi.stubGlobal("process", bare(["version"]));
@@ -299,3 +357,23 @@ describe("cpus under a cgroup quota", () => {
     }
   });
 });
+
+/** A gzipped tarball of one file. */
+function tarOf(path: string, text: string): Buffer {
+  const header = Buffer.alloc(512);
+  header.write(`package/${path}`, 0, "ascii");
+  header.write("0000644\0", 100, "ascii");
+  header.write(`${Buffer.byteLength(text).toString(8).padStart(11, "0")}\0`, 124, "ascii");
+  header.write("        ", 148, "ascii");
+  header.write("0", 156, "ascii");
+  let sum = 0;
+  for (const byte of header) sum += byte;
+  header.write(`${sum.toString(8).padStart(6, "0")}\0 `, 148, "ascii");
+  const body = Buffer.from(text);
+  const pad = Buffer.alloc((512 - (body.length % 512)) % 512);
+  return gzipSync(Buffer.concat([header, body, pad, Buffer.alloc(1024)]));
+}
+
+async function* once(bytes: Uint8Array): AsyncGenerator<Uint8Array> {
+  yield bytes;
+}

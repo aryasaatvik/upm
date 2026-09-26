@@ -1,6 +1,6 @@
 // Minimal ustar/pax tar reader for npm tarballs: regular files only, hardened paths.
 import { builtin } from "./builtin.ts";
-import { concat, hasNode } from "./runtime.ts";
+import { concat, hasZlib } from "./runtime.ts";
 import { now, tick, tracing } from "./util.ts";
 
 export interface TarEntry {
@@ -211,7 +211,7 @@ async function* gunzipped(source: AsyncIterable<Uint8Array>): AsyncGenerator<Uin
     return;
   }
   try {
-    if (hasNode && more?.done && start.length <= INFLATE_STEP) {
+    if (more?.done && start.length <= INFLATE_STEP && hasZlib()) {
       const t = tracing ? now() : 0;
       const out = builtin.zlib.gunzipSync(start, { maxOutputLength: MAX_ARCHIVE });
       if (tracing) tick("gunzip", now() - t);
@@ -222,7 +222,7 @@ async function* gunzipped(source: AsyncIterable<Uint8Array>): AsyncGenerator<Uin
     // A small tarball can declare gigabytes; refuse rather than fill memory. Counted here:
     // zlib's `maxOutputLength` is for the one-shot call, a stream ignores it.
     let total = 0;
-    for await (const chunk of hasNode ? inflateNode(rest()) : inflateWeb(rest())) {
+    for await (const chunk of hasZlib() ? inflateNode(rest()) : inflateWeb(rest())) {
       total += chunk.length;
       if (total > MAX_ARCHIVE) throw fail(`Tarball inflates past ${MAX_ARCHIVE} bytes`);
       yield chunk;
