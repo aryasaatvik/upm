@@ -36,16 +36,15 @@ export function Sidebar(props: {
 
   return (
     <>
-      {!open && (
-        <div className="shrink-0 pl-2 sm:pl-5 lg:pl-9 xl:pl-15">
-          <Toggle open={false} onClick={() => setOpen(true)} />
-        </div>
-      )}
+      {/* On a small screen the open sidebar floats over the page, so its toggle keeps the room. */}
+      <div className={`shrink-0 pl-2 sm:pl-5 lg:pl-9 xl:pl-15 ${open ? "sm:hidden" : ""}`}>
+        <Toggle open={false} onClick={() => setOpen(true)} />
+      </div>
 
       {/* Both views stay mounted, so switching keeps their scroll, selection and expansion. */}
       <aside
         style={{ width }}
-        className={`relative box-content max-w-[75vw] shrink-0 flex-col pr-3 pl-3 sm:pl-6 lg:pl-10 xl:pl-16 ${open ? "flex" : "hidden"}`}
+        className={`relative box-content max-sm:absolute max-sm:top-0 max-sm:bottom-3 max-sm:left-0 max-sm:z-20 max-w-[75vw] shrink-0 flex-col pr-3 pl-3 sm:pl-6 lg:pl-10 xl:pl-16 ${open ? "flex" : "hidden"}`}
       >
         {/* The sash sits in the gap beside the island. */}
         <div ref={ref} className={`flex min-h-0 flex-1 flex-col ${ISLAND}`}>

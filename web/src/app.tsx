@@ -52,7 +52,7 @@ export function App({ ready }: { ready?: Promise<unknown> }) {
   const [panel, setPanel] = useState<PanelTab | undefined>(() =>
     narrow() ? undefined : "requests",
   );
-  const [sidebar, setSidebar] = useState(() => !narrow());
+  const [sidebar, setSidebar] = useState(true);
   const [breadcrumb, setBreadcrumb] = useState<HTMLElement | null>(null);
   // A breadcrumb part to show in the Explorer; a new object each click, so the same one repeats.
   const [reveal, setReveal] = useState<{ path: string }>();
@@ -227,7 +227,7 @@ export function App({ ready }: { ready?: Promise<unknown> }) {
   const togglePanel = (tab: PanelTab) => setPanel((open) => (open === tab ? undefined : tab));
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-(--chrome-bg) text-sm text-zinc-900 dark:text-zinc-100">
+    <div className="flex h-dvh flex-col overflow-hidden bg-(--chrome-bg) text-sm text-zinc-900 dark:text-zinc-100">
       <TopBar
         spec={spec}
         setSpec={setSpec}
@@ -238,7 +238,7 @@ export function App({ ready }: { ready?: Promise<unknown> }) {
 
       {/* Margins grow with the page; the sidebar floats on the left at full height, the editor
           runs to the right edge and the panel sits below it. */}
-      <div className="flex min-h-0 flex-1 pb-3">
+      <div className="relative flex min-h-0 flex-1 pb-3">
         <Sidebar
           reveal={reveal}
           open={sidebar}
@@ -254,7 +254,7 @@ export function App({ ready }: { ready?: Promise<unknown> }) {
               reveal={reveal}
               onSelect={(path) => {
                 setSelected(path);
-                // On a small screen the sidebar covers the editor: get it out of the way.
+                // On a small screen the sidebar floats over the editor: get it out of the way.
                 if (narrow()) setSidebar(false);
               }}
             />
@@ -328,7 +328,7 @@ export function App({ ready }: { ready?: Promise<unknown> }) {
   );
 }
 
-/** Too small a screen to spare room for the sidebar and the panel. */
+/** Too small a screen to spare room for the panel, or for the sidebar beside the editor. */
 function narrow(): boolean {
   return innerWidth < 640;
 }
