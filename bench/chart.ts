@@ -640,9 +640,9 @@ function open(s: Svg, width: number, height: number, title: string, description:
   });
 }
 
-// A GitHub Actions cache restore step, fitted to actions/cache on ubuntu-latest
-// (results/2026-09-25-ci-cache-restore.md): a fixed cost for the step and key lookup, a round
-// trip per doubling while the download ramps up, then bandwidth.
+// A GitHub Actions cache restore step, fitted to actions/cache on ubuntu-latest: a fixed cost
+// for the step and key lookup, a round trip per doubling while the download ramps up, then
+// bandwidth.
 const RESTORE = { baseMs: 490, doublingMs: 50, fromBytes: 16_000, mbps: 110 };
 const restoreMs = (packed: number) =>
   RESTORE.baseMs +

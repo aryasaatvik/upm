@@ -24,6 +24,8 @@ Use [bench/README.md](../bench/README.md) for the suite, the paired A/B runner
 - Alternate baseline and candidate, swap order, repeat, and inspect paired differences
   and spread. Keep builds, versions, failures and unlike environments in separate groups.
 - Check the resulting graph and files. Installing less is not a speedup unless intended.
+  `upm.lock`, the tree and the store's blobs and indexes must match between builds;
+  `bench/ab.sh lock` fails when the lockfiles differ.
 
 ## Cover different shapes
 

@@ -189,7 +189,7 @@ process's last 10 ms.
 disk: its directory in the jup store, or `dist/` (`src/` with `UPM_CLI`) for upm.
 `runner_packed_bytes` is the same files as a POSIX tar through `zstd -T0`, the
 way `actions/cache` packs them. The size chart turns it into an estimated restore time,
-fitted to [measured GitHub Actions restores](results/2026-09-25-ci-cache-restore.md).
+fitted to measured `actions/cache` restores on `ubuntu-latest` (`RESTORE` in `chart.ts`).
 The warm time chart loops between the measured installs and the same installs moved right by
 that estimate. With reduced motion it stays on the measured view.
 
@@ -266,6 +266,3 @@ pairs the new build won.
   the rows file, `AB_KEEP=1` keeps the work directories. `min-release-age` is cleared.
 - It holds `.work/ab/.lock` (via `flock`), so two runs on one machine wait for each other.
 - Use ten or more pairs before claiming a result: [../.agents/perf.md](../.agents/perf.md).
-
-Past A/B results, with the command behind each table, are in
-[results/2026-09-16-overnight.md](results/2026-09-16-overnight.md).

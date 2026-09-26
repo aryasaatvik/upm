@@ -84,7 +84,8 @@ computed from (lockfile bytes, root manifest, store, registry hosts, platform, f
 install whose inputs match checks only what the state recorded — the root's links and bins,
 the `.store` entry names — without reading the graph. Both trust the state's `entries` and
 `root` for _which_ names to look for; neither reads a file's bytes. Anything that changes
-what a resolution is a function of must be added to the inputs, or the short check lies.
+what a resolution is a function of (a new `.npmrc` key that changes hosts, say) must be added
+to the inputs (`inputsOf` in `src/api.ts`), or the short check lies.
 
 Shared hardlinks make writes affect other projects. Treat installed content as
 immutable. Integrity must pass before untrusted archive content is written to the

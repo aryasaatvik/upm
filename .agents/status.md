@@ -26,7 +26,7 @@ compatibility. Keep this page about open work, not completed implementation step
   Start at `src/link.ts`.
 - **Missing libc metadata:** abbreviated registry documents can hide a `libc` restriction
   when a package declares neither `os` nor `cpu`. Test this shape before changing metadata
-  reads; never guess libc from the package name. Start at `withLibc` in `src/resolve.ts`.
+  reads; never guess libc from the package name. Start at `needsLibc` in `src/resolve.ts`.
 - **Platform support:** CI tests Linux, macOS and Windows. On Windows a directory link is
   an absolute junction, so a moved tree is relinked, not reused. A bin there is cmd-shim's
   `.cmd`, `.ps1` and `sh` trio (`src/shim.ts`), and an argument to a `.cmd` is escaped twice,
@@ -39,8 +39,8 @@ compatibility. Keep this page about open work, not completed implementation step
   leaves the old copy writable in projects still linked to it.
   A portable lockfile is not proof of a portable installer. Add real install/run checks,
   plus glibc/musl and CPU-limited cases, before making broader support claims. Nobody has
-  run the 2026-09-16 install-path changes by hand off Linux: the bin's flush-then-exit
-  (`exit` in `src/cli.ts`), the spool's temp rename (`adopt` in `src/unpack.ts`), index-path
+  run these by hand off Linux: the bin's flush-then-exit (`exit` in `src/cli.ts`; stdout to a
+  pipe is asynchronous there), the spool's temp rename (`adopt` in `src/unpack.ts`), index-path
   shards in the link worker and the state's root links as `readLink` spells them.
 - **Torn store index, required package:** the linker reads an index where it links it (on
   a worker for a small entry), not in the fill, so a torn index of a required package fails
@@ -68,7 +68,9 @@ compatibility. Keep this page about open work, not completed implementation step
 - **Symlinked workspace:** when a workspace directory is itself a symlink, its dep links
   are spelled relative to the path linked through, not where they sit, so on Linux and
   macOS they dangle. The test pins that spelling. Start at `linkTop` in `src/link.ts`.
-
+- **Compile cache is never reclaimed:** the bin's V8 cache in `~/.upm/compile-cache` gains
+  entries for every new build and Node version, and nothing removes old ones. Needs a
+  retention rule and a place to apply it, `prune` or the bin's start. Start at `src/upm.ts`.
 - **npm's commands need the network:** `upm publish`, `version`, `login` and the rest run
   `upm exec npm`, which asks the registry for npm's `latest` on every run (about 250 ms) and
   fails offline unless the project installs npm. npm on `PATH` would be faster but is not
@@ -110,14 +112,14 @@ These need a scope decision, not just a patch:
   `--no-workspaces`. A frozen install still globs the patterns to check the lockfile against
   the tree; make that a fast path only if it shows in a profile. Publishing a manifest with a
   `workspace:` range is another manager's job: `upm publish` is npm's, which keeps it.
-- `.npmrc` is read for the registry, `@scope:registry`, the credential keys,
-  `save-exact`, `min-release-age`, `before` and `min-release-age-exclude`, from the project, user and global files and `npm_config_*`. Not npm's own
-  built-in npmrc, and no `proxy`, `strict-ssl`, `cafile` or `always-auth`: those need an
-  HTTP layer upm does not have. `upm login` and `upm config set` are npm's, run through
-  exec. A credential is sent under its `//host/path/`, and to the rest of that host as
-  npm's same-host fallback
-  does — where two registries with different credentials share a host, the first covers
-  paths outside both, where npm goes by the package's scope. A cross-origin redirect
+- `.npmrc` is read for the registry, `@scope:registry`, the credential keys, `save-exact`,
+  `min-release-age`, `before` and `min-release-age-exclude`, from the project, user and global
+  files and `npm_config_*`. Not npm's own built-in npmrc, and no `proxy`, `strict-ssl`,
+  `cafile` or `always-auth`: those need an HTTP layer upm does not have. `upm login` and
+  `upm config set` are npm's, run through exec. A credential is sent under its
+  `//host/path/`, and to the rest of that host as npm's same-host fallback does — where two
+  registries with different credentials share a host, the first covers paths outside both,
+  where npm goes by the package's scope. A cross-origin redirect
   drops it, which is Node's fetch behavior and what `test/config.test.ts` pins.
 - The release age (default one day) filters fresh picks through the registry's view only:
   exact versions, locked ones and libc reads are never held back, since a package's exact pins
@@ -130,7 +132,9 @@ These need a scope decision, not just a patch:
   with that consumer's peer range. `--verify` reports such conflicts; it cannot fix them.
 - An alias does not supply a peer under the package's real name.
 - `dedupe` prefers versions already locked; it is not an upgrade strategy. A fresh resolve
-  requires removing the lockfile. There is no dedicated update command.
+  requires removing the lockfile (`upm update` is the url tarball gap above).
+- The tarball spool is Node-only (it runs in the unpack worker); the portable tar reader
+  still buffers whole files.
 - Off Node, version picking has no target Node version for `engines.node`. Add an explicit
   target only if a caller needs cross-runtime resolution.
 
@@ -145,29 +149,29 @@ Unranked: take a fresh profile before choosing one. Use [perf.md](perf.md) for e
   requests to workers.
 - The metadata walk's end on a cold install is bound by per-request latency and main-thread
   delay on the two thread hops per pick, not by the gate; wider gates made the install slower
-  ([walk-critical-path.md](walk-critical-path.md)). The next check is `bench/ab.sh lock` on a
-  build that takes a hop off the pick path; what would settle it is a walk that runs off the
-  main thread with the same `upm.lock`. Start at `ask` in `src/registry-pool.ts`.
+  ([walk results][walk]). The next check is `bench/ab.sh lock` on a build that takes a hop
+  off the pick path; what would settle it is a walk that runs off the main thread with the
+  same `upm.lock`. Start at `ask` in `src/registry-pool.ts`.
 - Link materialize on a big tree is bound by main-thread dispatch, not syscalls; batching was a
-  wash at four workers ([warm-link.md](warm-link.md)). Profile main during a warm `nuxt`
-  materialize before adding threads; what would settle it is less main-thread busy time with
-  the same tree. Start at `plan` in `src/link.ts`.
+  wash at four workers ([warm results][warm]). Profile main during a warm `nuxt` materialize
+  before adding threads; what would settle it is less main-thread busy time with the same
+  tree. Start at `plan` in `src/link.ts`.
 - The biggest tarballs' tail is their inflate and the hash of their biggest files; overlapping
   the two means helpers writing before the tarball's integrity has passed, which design.md
-  forbids ([unpack-workers.md](unpack-workers.md)). A design decision, not a benchmark, comes
-  first. Start at `split` and `writePart` in `src/unpack.ts`.
+  forbids ([unpack results][unpack]). A design decision, not a benchmark, comes first.
+  Start at `split` and `writePart` in `src/unpack.ts`.
 - Registry threads at pool creation are a wash on a big tree and cost a one-package install
-  most of its time ([thread-topology.md](thread-topology.md)); what would make that start free
-  is a cheaper thread boot, most of which is the worker's first load of the fetch machinery.
+  most of its time ([thread start results][start]); what would make that start free is a
+  cheaper thread boot, most of which is the worker's first load of the fetch machinery.
   Measure `tiny` cold and `nuxt` cold together. Start at `START_AT` in `src/registry-pool.ts`
   and `src/registry-worker.ts`.
-- Fewer threads (unpack, registry) save CPU at a small wall cost on a many-core box and are
+- Fewer threads (unpack, registry) save CPU at a small wall cost on a many-core machine and are
   untested on a CPU-limited one; a `taskset -c 0-3` run of a few pairs is all there is. Decide
   whether pool sizes should follow the cores more steeply. Start at `defaultPoolSize` in
   `src/api.ts` and the size in `createRegistryPool`.
-- Untested off this machine: slow links (the streaming cutoff and the packument cutoff both
-  assume a fast wire), a registry that throttles (above), and a resolver with a local stub
-  (the lookup cache and hedge change nothing there).
+- Untested beyond one Linux machine: slow links (the streaming cutoff and the packument
+  cutoff both assume a fast wire), a registry that throttles (above), and a resolver with a
+  local stub (the lookup cache and hedge change nothing there).
 - A slow-but-alive tarball transfer is not caught: a cold `next` run was seen taking a minute
   because the big tarball trickled in with no silence long enough for the stall watchdog,
   the main thread idle and no lookup slow. A throughput floor after the first megabytes, or a
