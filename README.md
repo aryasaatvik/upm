@@ -64,7 +64,7 @@ lifecycle scripts for a fairer comparison.
 Install upm globally:
 
 ```sh
-npm install -g upm
+npm i -g upm --min-release-age 0
 ```
 
 Then install your project's dependencies:
@@ -170,6 +170,77 @@ lockfile is out of date. A URL is not read again: the lockfile pins its bytes, a
 install that has to fetch it fails with `EINTEGRITY` if the server now sends others. To
 take a new version, point the dependency at a new URL, or remove it and add it again.
 Credentials in `.npmrc` are sent to a URL on the same host, as for a registry.
+
+## JavaScript API
+
+The commands are also available as functions from `upm`:
+
+```js
+import { add, install, lock, resolve, run } from "upm";
+
+// Install from the lockfile, failing if it is out of date
+const result = await install({
+  dir: "./my-project",
+  frozen: true,
+  log: (message, level) => console.error(`[${level}] ${message}`),
+}); // { packages: 120, workspaces: 0, upToDate: false, stats, ... }
+
+// Add a dependency to package.json and install it
+await add(["vue@^3"], {
+  dir: "./my-project",
+  group: "dependencies",
+}); // { added: [{ name: "vue", range: "^3", group: "dependencies" }], ... }
+
+// Resolve a spec to a version without installing
+const [vue] = await resolve(["vue@^3"]); // { name: "vue", version: "3.5.13", dist, ... }
+
+// Build the lockfile in memory without writing it
+const lockfile = await lock({ dir: "./my-project", write: false }); // { root, packages, ... }
+
+// Run the build script in every workspace
+const { code, results } = await run("build", {
+  dir: "./my-project",
+  workspaces: "all",
+}); // { code: 0, results: [{ name: "app", path, file, code: 0 }] }
+
+// Other exports
+import {
+  dedupe,          // re-resolve, preferring locked versions, then install
+  exec,            // run a package's bin, installing it if needed
+  fetchLockfile,   // fill the store from the lockfile, no linking
+  fetchPackages,   // resolve specs and fill the store, no linking
+  listScripts,     // list package.json scripts
+  prune,           // drop unused store and project entries
+  remove,          // remove dependencies, then install
+} from "upm";
+
+// Experimental resolver API (works in browser too)
+import {
+  createRegistry,  // registry client that fetches packuments
+  formatLockfile,  // lockfile object to text
+  fromLockfile,    // lockfile object to resolution
+  parseLockfile,   // lockfile text to object
+  parseSpec,       // parse a spec such as "vue@^3"
+  resolveTree,     // resolve a dependency tree
+  toLockfile,      // resolution to lockfile object
+} from "upm/resolver";
+```
+
+Functions return data and do not print their own messages. Use `log` for progress,
+warnings, and debug messages. `run` and `exec` still share the child's
+terminal input and output.
+
+Errors have a `code` you can handle. The exported `ErrorCode` type lists common
+codes; filesystem and worker errors may have others. Options under `experimental`
+and the diagnostic `InstallStats` fields may change in any release. See
+[`src/api.ts`](src/api.ts) for options and result types.
+
+The main `upm` entry needs Node.js. Its worker threads start from code inside it, not from
+separate files, so it can be bundled into your app; when no thread can start, it works on one
+thread and warns through `log`. The experimental `upm/resolver` entry provides
+the registry client, dependency resolver, and in-memory lockfile tools without
+requiring Node. It does not install files or read `.npmrc` for you. See
+[`src/resolver.ts`](src/resolver.ts) for its exports.
 
 ## Lockfiles and CI
 
@@ -421,15 +492,38 @@ Settings are read in this order, with later values taking priority:
    `--min-release-age <days>`, `--before <date>` and `--min-release-age-exclude <glob>`.
 
 A scope's registry still takes priority for packages in that scope, even with
-`--registry`. `UPM_REGISTRY` is a fallback when `npm_config_registry` is not set.
-`npm_config_userconfig` and `npm_config_globalconfig` can select other config files.
+`--registry`.
 
-Supported settings are `registry`, `@scope:registry`, `save-exact`, the release
-age settings below, and these credential forms:
+### Supported settings
 
-- `//host/path/:_authToken`
-- `//host/path/:_auth`
-- `//host/path/:username` with `//host/path/:_password` (base64-encoded password)
+An environment variable overrides every `.npmrc` file. An empty cell means the
+setting has no form there.
+
+| `.npmrc` key                                          | Environment variable                       | Description                                                                                                        |
+| ----------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `registry`                                            | `npm_config_registry`, then `UPM_REGISTRY` | Default registry. Defaults to `https://registry.npmjs.org/`.                                                       |
+| `@scope:registry`                                     |                                            | Registry for packages in `@scope`.                                                                                 |
+| `//host/path/:_authToken`                             |                                            | Token sent as `Bearer` to URLs under `//host/path/`.                                                               |
+| `//host/path/:_auth`                                  |                                            | Base64 `user:password` sent as `Basic` to URLs under `//host/path/`.                                               |
+| `//host/path/:username` with `//host/path/:_password` |                                            | `Basic` auth. `_password` is base64-encoded.                                                                       |
+| `save-exact`                                          | `npm_config_save_exact`                    | `true` makes `add` save the exact version instead of a `^` range.                                                  |
+| `min-release-age`                                     | `npm_config_min_release_age`               | Minimum age in days of newly picked versions. Defaults to `1`; `0` turns it off.                                   |
+| `before`                                              | `npm_config_before`                        | Only pick versions published on or before this date.                                                               |
+| `min-release-age-exclude`                             | `npm_config_min_release_age_exclude`       | Package names or globs never held back by [release age](#release-age). A `key[]=` list or a comma-separated value. |
+|                                                       | `npm_config_userconfig`                    | Path of the user config file, instead of `~/.npmrc`.                                                               |
+| `globalconfig` (user config only)                     | `npm_config_globalconfig`                  | Path of the global config file.                                                                                    |
+| `prefix` (user config only)                           | `npm_config_prefix`, `PREFIX`              | The global config file is `<prefix>/etc/npmrc`.                                                                    |
+|                                                       | `UPM_STORE`                                | Shared store directory. Defaults to `~/.upm/store`; `--store` takes priority.                                      |
+|                                                       | `UPM_LINK_POOL`                            | Same as `--experimental-link-pool`: `off`, `on` or `<size>[,<packages>[,<files>]]`.                                |
+|                                                       | `UPM_RESOLVE_POOL`                         | Experimental: threads that read the registry. `off`, `on` or a count up to 16.                                     |
+|                                                       | `UPM_DEBUG`                                | `1` or `on` prints debug messages.                                                                                 |
+|                                                       | `UPM_TRACE`                                | Benchmarks: appends one JSON line per event to this file.                                                          |
+|                                                       | `UPM_PHASES`                               | Benchmarks: `1` prints phase timings to stderr at exit.                                                            |
+|                                                       | `NODE_DISABLE_COMPILE_CACHE`               | `1` turns off the compile cache in `~/.upm/compile-cache`.                                                         |
+|                                                       | `NO_COLOR`, `FORCE_COLOR`                  | Turn colored output off or on.                                                                                     |
+
+Values can use `${VAR}` to read an environment variable. `${VAR?}` is empty when
+`VAR` is not set; `${VAR}` then stays as written.
 
 Credentials in `.npmrc` must have a `//host/path/` prefix. An unscoped token such
 as `_authToken=...` is refused. Credentials apply to both metadata and tarball
@@ -516,49 +610,6 @@ valid package index references. It does **not** remove every unused cached
 package: a valid index keeps its files even if no project uses that package.
 Files and entries written in the last hour are left alone. Avoid running prune
 during an install; that grace period does not guarantee safe concurrent cleanup.
-
-## JavaScript API
-
-The commands are also available as functions from `upm`:
-
-```js
-import { add, install, lock, resolve, run } from "upm";
-
-const result = await install({
-  dir: "./my-project",
-  frozen: true,
-  log: (message, level) => console.error(`[${level}] ${message}`),
-});
-
-await add(["vue@^3"], {
-  dir: "./my-project",
-  group: "dependencies",
-});
-
-const [vue] = await resolve(["vue@^3"]);
-const lockfile = await lock({ dir: "./my-project", write: false });
-const { code, results } = await run("build", {
-  dir: "./my-project",
-  workspaces: "all",
-});
-```
-
-Other exports are `dedupe`, `remove`, `prune`, `fetchPackages`, `fetchLockfile`,
-`listScripts` and `exec`. Functions return data and do not print their own messages. Use `log`
-for progress, warnings, and debug messages. `run` and `exec` still share the child's
-terminal input and output.
-
-Errors have a `code` you can handle. The exported `ErrorCode` type lists common
-codes; filesystem and worker errors may have others. Options under `experimental`
-and the diagnostic `InstallStats` fields may change in any release. See
-[`src/api.ts`](src/api.ts) for options and result types.
-
-The main `upm` entry needs Node.js. Its worker threads start from code inside it, not from
-separate files, so it can be bundled into your app; when no thread can start, it works on one
-thread and warns through `log`. The experimental `upm/resolver` entry provides
-the registry client, dependency resolver, and in-memory lockfile tools without
-requiring Node. It does not install files or read `.npmrc` for you. See
-[`src/resolver.ts`](src/resolver.ts) for its exports.
 
 ## Current limits
 
