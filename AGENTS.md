@@ -1,17 +1,16 @@
 # upm
 
 A minimal, zero-dependency, npm-registry-compatible package manager.
-Prerelease and self-hosting; current gaps and next steps are in [.agents/status.md](.agents/status.md).
 
 ## Rules
 
-- Keep the project small, minimal and fast. No backward compatibility is needed yet.
+- Keep the project small, minimal and fast.
 - Zero runtime dependencies. Node builtins only.
 - Use simple English. Add short comments only for what the code cannot explain.
 - Keep this file current. Use the linked `.agents/` pages for deeper context, not
   source summaries, machine-specific numbers or completed work logs.
 - upm installs upm. Dev dependencies come from `upm.lock`, never npm or pnpm installs.
-  npm may run repo scripts. Setup and checks: [.agents/maintenance.md](.agents/maintenance.md).
+  npm may run repo scripts.
 
 ## Runtime boundary
 
