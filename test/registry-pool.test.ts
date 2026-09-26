@@ -348,6 +348,37 @@ describe("createRegistryPool", () => {
     });
   });
 
+  it("answers here where the timers are a browser's and there is no worker_threads", async () => {
+    vi.resetModules();
+    vi.doMock("../src/builtin.ts", async (importOriginal) => {
+      const real = (await importOriginal<typeof import("../src/builtin.ts")>()).builtin;
+      return {
+        builtin: {
+          ...real,
+          get workers(): never {
+            throw Object.assign(new Error("no worker_threads"), { code: "ENOBUILTIN" });
+          },
+        },
+      };
+    });
+    try {
+      const { createRegistryPool: create } = await import("../src/registry-pool.ts");
+      const noThreads = vi.fn();
+      // A browser's timer is a number: nothing to unref. Only while the pool starts, at `startAt:
+      // 0` as it is made, since the request after it is Node's fetch, which wants Node's timers.
+      vi.stubGlobal("setTimeout", () => 1);
+      const p = create({ registry, startAt: 0, noThreads });
+      vi.unstubAllGlobals();
+      open.push(p);
+      expect((await p.pick(parseSpec("app@^1"))).version).toBe("1.0.0");
+      expect(noThreads).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+      vi.doUnmock("../src/builtin.ts");
+      vi.resetModules();
+    }
+  });
+
   it("hands each thread the whole gate and a share of its floor", async () => {
     expect(shares(16, 3)).toEqual([6, 5, 5]);
     expect(shares(4, 3)).toEqual([2, 1, 1]);

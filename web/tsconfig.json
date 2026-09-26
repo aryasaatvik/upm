@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "jsx": "react-jsx",
+    "lib": ["esnext", "dom", "dom.iterable"],
+    "strict": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "noUncheckedIndexedAccess": true,
+    "allowImportingTsExtensions": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["vite/client", "node"],
+    "paths": {
+      "upm/resolver": ["../src/resolver.ts"],
+      "upm/src/*": ["../src/*"],
+      // md4x's "." types declare no functions; Vite loads its browser build, typed here.
+      "md4x": ["./node_modules/md4x/lib/standalone.d.mts"]
+    }
+  },
+  "include": ["src", "vite.config.ts", "readme.ts", "scripts"]
+}

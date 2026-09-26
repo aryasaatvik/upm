@@ -1,0 +1,28 @@
+{
+  "name": "upm-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "og": "node scripts/og.ts",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "devDependencies": {
+    "@pierre/trees": "latest",
+    "@tailwindcss/vite": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@vitejs/plugin-react": "latest",
+    "md4x": "latest",
+    "nitro": "npm:nitro-nightly@latest",
+    "pathe": "latest",
+    "rangi": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "tailwindcss": "latest",
+    "takumi-js": "latest",
+    "vite": "latest"
+  }
+}

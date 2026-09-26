@@ -319,7 +319,13 @@ describe("link pool", () => {
     try {
       const { startLinkPool: start } = await import("../src/link-pool.ts");
       expect(start(2)).toBe(undefined);
+      // Nor in a browser, whose timer is a number with nothing to unref.
+      vi.stubGlobal("setTimeout", () => 1);
+      const noThreads = vi.fn();
+      expect(start(2, undefined, undefined, noThreads)).toBe(undefined);
+      expect(noThreads).toHaveBeenCalledTimes(1);
     } finally {
+      vi.unstubAllGlobals();
       vi.doUnmock("../src/builtin.ts");
       vi.resetModules();
     }

@@ -69,10 +69,11 @@ export function startLinkPool(
   // One timer for the pool, never holding the process open: a thread still silent when it
   // fires is terminated, and its `exit` retires it like any other death. Nothing was ever
   // handed to it, so no shard is lost; with no thread left the queue is refused and the
-  // caller builds here.
+  // caller builds here. A browser's timer is a number, with nothing to unref.
   const boot = setTimeout(() => {
     for (const slot of slots) if (!slot.ready) void slot.worker.terminate();
-  }, bootMs).unref();
+  }, bootMs);
+  boot.unref?.();
   try {
     entry ??= linkWorker();
     for (let i = 0; i < size; i++) {

@@ -11,6 +11,7 @@ A minimal, zero-dependency, npm-registry-compatible package manager.
   source summaries, machine-specific numbers or completed work logs.
 - upm installs upm. Dev dependencies come from `upm.lock`, never npm or pnpm installs.
   npm may run repo scripts.
+- Do not run e2e tests on web, user will do it via their dev server and manual testing
 
 ## Runtime boundary
 

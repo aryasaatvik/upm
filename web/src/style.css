@@ -1,0 +1,188 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  /* Shows a loading state only when the wait is long enough to notice: no flash on a cache hit. */
+  --animate-appear: appear 150ms ease-out 500ms both;
+  @keyframes appear {
+    from {
+      opacity: 0;
+    }
+  }
+}
+
+html {
+  color-scheme: light dark;
+  /* The two surfaces: raised islands (sidebar, search box), and the page around them. */
+  --editor-bg: light-dark(#ffffff, #18181b);
+  --chrome-bg: light-dark(#fafafa, #0f0f11);
+  background: var(--chrome-bg);
+}
+
+/* Quiet scrollbars: a thin thumb, no track. Chrome and Firefox read the first rule, Safari the rest. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: light-dark(#d4d4d8, #3f3f46) transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 9999px;
+  background: light-dark(#d4d4d8, #3f3f46) padding-box;
+}
+
+/* rangi's block scrolls itself; let the pane scroll instead and keep the gutter in view. */
+.code > div {
+  overflow: visible !important;
+  min-width: fit-content;
+}
+.code .shj-numbers {
+  position: sticky;
+  left: 0;
+  padding-left: 1rem !important;
+  padding-right: 1rem !important;
+  /* rangi dims the gutter with opacity, which would show the code scrolling under it. */
+  opacity: 1 !important;
+  color: light-dark(#a1a1aa, #52525b) !important;
+  background: var(--chrome-bg);
+}
+
+.file-tree {
+  --trees-bg-override: transparent;
+  --trees-accent-override: #f59e0b;
+  --trees-font-family-override: var(--font-sans);
+}
+
+/* The landing's README. */
+.readme {
+  margin: 0 auto;
+  max-width: 860px;
+  padding: 32px 16px 64px;
+  @media (width >= 40rem) {
+    padding-inline: 32px;
+  }
+  line-height: 1.65;
+  color: light-dark(#27272a, #d4d4d8);
+  & h1,
+  & h2,
+  & h3,
+  & h4 {
+    color: light-dark(#18181b, #fafafa);
+    line-height: 1.25;
+    margin: 1.6em 0 0.6em;
+    font-weight: 600;
+    scroll-margin-top: 16px;
+  }
+  & h1,
+  & h2 {
+    padding-bottom: 0.3em;
+    border-bottom: 1px solid light-dark(#e4e4e7, #27272a);
+  }
+  & h1 {
+    font-size: 1.9em;
+  }
+  & h2 {
+    font-size: 1.45em;
+  }
+  & h3 {
+    font-size: 1.2em;
+  }
+  & p,
+  & ul,
+  & ol,
+  & pre,
+  & table,
+  & blockquote {
+    margin: 0 0 1em;
+  }
+  & ul {
+    list-style: disc;
+    padding-left: 1.5em;
+  }
+  & ol {
+    list-style: decimal;
+    padding-left: 1.5em;
+  }
+  & li + li {
+    margin-top: 0.25em;
+  }
+  & a {
+    color: light-dark(#b45309, #fbbf24);
+  }
+  & a:hover {
+    text-decoration: underline;
+  }
+  & img {
+    display: inline;
+    max-width: 100%;
+  }
+  & p img {
+    vertical-align: middle;
+  }
+  & code,
+  & pre {
+    font: 12.5px/1.5 var(--font-mono);
+  }
+  & :not(pre) > code {
+    padding: 0.15em 0.35em;
+    border-radius: 4px;
+    background: light-dark(#f4f4f5, #27272a);
+  }
+  & pre {
+    padding: 12px 16px;
+    border-radius: 6px;
+    overflow: auto;
+    background: var(--editor-bg);
+    border: 1px solid light-dark(#e4e4e7, #27272a);
+  }
+  & blockquote {
+    padding: 0 1em;
+    color: light-dark(#71717a, #a1a1aa);
+    border-left: 3px solid light-dark(#e4e4e7, #3f3f46);
+  }
+  & table {
+    border-collapse: collapse;
+    display: block;
+    overflow: auto;
+  }
+  & th,
+  & td {
+    padding: 6px 12px;
+    border: 1px solid light-dark(#e4e4e7, #3f3f46);
+  }
+  & hr {
+    border: 0;
+    border-top: 1px solid light-dark(#e4e4e7, #27272a);
+  }
+}
+
+/* The landing's hero moving into the playground's top bar (see src/landing.ts). */
+::view-transition-group(*) {
+  animation-duration: 0.35s;
+  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+/* One picture at two sizes: only the large one shows, scaled. The small one scaled up blurs,
+   and the two crossfaded ghost. */
+::view-transition-old(logo),
+::view-transition-new(logo) {
+  animation: none;
+}
+html[data-to="play"]::view-transition-new(logo),
+html[data-to="landing"]::view-transition-old(logo) {
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
