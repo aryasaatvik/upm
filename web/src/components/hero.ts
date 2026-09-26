@@ -1,9 +1,8 @@
 // The hero both pages open with: the README's logo and the spec box. Both pages build it from
-// these classes: large and centered on the landing, small at the top of the playground. Their
-// view-transition names let the logo and the box morph from one to the other.
+// these classes: large and centered on the landing, small in one row at the top of the
+// playground. Their view-transition names let the logo and the box morph from one to the other.
 export { default as logo } from "virtual:readme/logo";
 
-export const HERO = "relative shrink-0 px-4 pt-6 sm:px-8 sm:pt-8";
 /** The top-right links: the docs as a button, then GitHub. */
 export const NAV = "absolute top-3 right-4 flex items-center gap-3 text-xs sm:right-8";
 export const DOCS =
@@ -21,8 +20,8 @@ export const BUTTON =
 
 /** The hero's sizes, added to the classes above. */
 export const SMALL = {
-  logo: "h-12 [&_img]:h-12",
-  form: "mt-4 h-12 max-w-xl text-sm sm:mt-6",
+  logo: "h-7 justify-self-start [&_img]:h-7",
+  form: "h-9 w-full text-sm",
 };
 export const LARGE = {
   logo: "h-16 sm:h-20 [&_img]:h-16 sm:[&_img]:h-20",

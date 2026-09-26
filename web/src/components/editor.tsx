@@ -1,5 +1,6 @@
 // The editor pane: the selected file, or what stands in for it.
-import { useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import type { View } from "../app.tsx";
 import { Code, formatBytes, preview } from "./code.tsx";
 import { LOCK } from "./files.tsx";
@@ -7,22 +8,28 @@ import type { InstalledFile } from "../lib/install.ts";
 import { Markdown, MarkdownSkeleton } from "./markdown.tsx";
 import { ErrorBox, IconButton, Icon, Waiting } from "./ui.tsx";
 
+/** Where the open file's breadcrumb goes (floating over the top of the editor), and what a click
+ * on one of its parts does. */
+export const Breadcrumb = createContext<{
+  slot: HTMLElement | null;
+  reveal: (path: string) => void;
+}>({ slot: null, reveal: () => {} });
+
 export function Editor(props: {
   view: View | undefined;
   files: Map<string, InstalledFile> | undefined;
   selected: string;
   picked: number;
+  /** A run is about to start, so no welcome. */
+  starting?: boolean;
   examples: string[];
   onRun: (spec: string) => void;
 }) {
   const { view, files, selected, picked } = props;
+  if (!view && props.starting) return <MarkdownSkeleton />;
   if (!view) return <Welcome examples={props.examples} onRun={props.onRun} />;
-  if (!view.top)
-    return (
-      <Waiting live>
-        Resolving {view.spec} · {picked} picked
-      </Waiting>
-    );
+  // The status bar shows the walk's progress; the README skeleton holds its place.
+  if (!view.top) return <MarkdownSkeleton />;
   if (view.top instanceof Error) {
     return (
       <div className="mx-auto max-w-2xl p-8">
@@ -133,13 +140,13 @@ function Lockfile({ resolved, picked }: { resolved: View["resolved"]; picked: nu
   );
 }
 
-/** The content, with the file's path, details and actions under it. */
+/** The content, with the file's path, details and actions in the breadcrumb slot. */
 function Frame(props: { path: string; meta: string; actions?: ReactNode; children: ReactNode }) {
+  const { slot, reveal } = useContext(Breadcrumb);
   const parts = props.path.split("/");
-  return (
-    <div className="flex h-full flex-col">
-      <div className="min-h-0 flex-1">{props.children}</div>
-      <div className="flex h-9 shrink-0 items-center gap-1 overflow-hidden pr-3 pl-3 text-xs sm:pl-6 lg:pl-10 xl:pl-16 whitespace-nowrap text-zinc-500">
+  const breadcrumb = (
+    <div className="pr-3 sm:pr-6 lg:pr-10 xl:pr-16">
+      <div className="flex h-9 items-center gap-1 overflow-hidden rounded-xl border border-zinc-200/40 bg-(--editor-bg)/50 px-3 text-xs whitespace-nowrap text-zinc-500 backdrop-blur-xl backdrop-saturate-150 dark:border-white/5">
         <Icon
           name={props.path === LOCK ? "lock" : "files"}
           className="mr-1 size-3.5 text-zinc-400"
@@ -150,13 +157,18 @@ function Frame(props: { path: string; meta: string; actions?: ReactNode; childre
             className={`flex items-center gap-1 ${i === parts.length - 1 ? "shrink-0" : "min-w-0"}`}
           >
             {i > 0 && <Icon name="chevron" className="size-3 text-zinc-400" />}
-            <span
-              className={
-                i === parts.length - 1 ? "font-medium text-zinc-800 dark:text-zinc-200" : "truncate"
-              }
+            <button
+              type="button"
+              title="Show in the Explorer"
+              onClick={() => reveal(parts.slice(0, i + 1).join("/"))}
+              className={`rounded px-0.5 hover:bg-zinc-200/60 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 ${
+                i === parts.length - 1
+                  ? "font-medium text-zinc-800 dark:text-zinc-200"
+                  : "min-w-0 truncate"
+              }`}
             >
               {part}
-            </span>
+            </button>
           </span>
         ))}
         <span className="ml-auto hidden shrink-0 pl-4 font-mono text-[11px] text-zinc-400 sm:inline">
@@ -165,6 +177,12 @@ function Frame(props: { path: string; meta: string; actions?: ReactNode; childre
         <span className="ml-auto sm:hidden" />
         <span className="flex items-center gap-1">{props.actions}</span>
       </div>
+    </div>
+  );
+  return (
+    <div className="h-full">
+      {props.children}
+      {slot && createPortal(breadcrumb, slot)}
     </div>
   );
 }
@@ -186,7 +204,8 @@ function Welcome({ examples, onRun }: { examples: string[]; onRun: (spec: string
             (Dependencies view, live as it picks).
           </li>
           <li>
-            The package's tarball is downloaded, integrity-checked and unpacked into the Explorer.
+            The package's tarball is downloaded, integrity-checked and unpacked into the Explorer,
+            or read from upm's store once an install has put it there.
           </li>
           <li>
             The lockfile upm would write lands beside it as{" "}

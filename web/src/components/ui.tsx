@@ -49,6 +49,12 @@ const ICONS = {
       <path d="M6 3v12m12-6a9 9 0 0 1-9 9" />
     </>
   ),
+  github: (
+    <>
+      <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65S8.93 17.38 9 18v4" />
+      <path d="M9 18c-4.51 2-5-2-7-2" />
+    </>
+  ),
   package: (
     <path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73ZM12 22V12M3.3 7l7.7 4.73a2 2 0 0 0 2 0L20.7 7M7.5 4.27l9 5.15" />
   ),
@@ -117,6 +123,27 @@ export function Icon({ name, className = "size-4" }: { name: IconName; className
 export function Pulse() {
   return (
     <span className="inline-block size-1.5 shrink-0 animate-pulse rounded-full bg-amber-500" />
+  );
+}
+
+/** A ring with a turning arc, for work under way. */
+export function Spinner({ className = "size-3" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden
+      className={`shrink-0 animate-spin ${className}`}
+    >
+      <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2" className="opacity-20" />
+      <path
+        d="M8 2a6 6 0 0 1 6 6"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        className="text-amber-500"
+      />
+    </svg>
   );
 }
 
@@ -203,9 +230,9 @@ export function IconButton(props: {
 /**
  * A thin edge to drag a pane's size from. `onDrag` gets the pointer; the pane works out its size.
  */
-/** A raised surface on the page, like the sidebar and the panel; each sets its own fill. */
+/** A raised surface on the page, like the sidebar and the panel: frosted glass over what scrolls under it. */
 export const ISLAND =
-  "overflow-hidden rounded-2xl border border-zinc-200/70 shadow-[0_1px_2px_rgb(0_0_0/0.04),0_12px_32px_-8px_rgb(0_0_0/0.12)] dark:border-zinc-800 dark:shadow-[0_1px_2px_rgb(0_0_0/0.4),0_16px_40px_-8px_rgb(0_0_0/0.7)]";
+  "overflow-hidden rounded-2xl bg-(--editor-bg)/85 backdrop-blur-xl backdrop-saturate-150 border border-zinc-200/70 shadow-[0_1px_2px_rgb(0_0_0/0.04),0_12px_32px_-8px_rgb(0_0_0/0.12)] dark:border-white/10 dark:shadow-[0_1px_2px_rgb(0_0_0/0.4),0_16px_40px_-8px_rgb(0_0_0/0.7)]";
 
 /** Segmented tabs; `grow` spreads them over the row. */
 export function Tabs({ grow, children }: { grow?: boolean; children: ReactNode }) {
@@ -260,7 +287,7 @@ export function Sash({
     <div
       onPointerDown={(e) => {
         e.preventDefault();
-        // Keep the drag's moves here, even over the README's frame.
+        // Keep the drag's moves here, even over the content it passes.
         e.currentTarget.setPointerCapture(e.pointerId);
         const up = () => {
           removeEventListener("pointermove", onDrag);
@@ -274,7 +301,7 @@ export function Sash({
       className={`absolute z-10 transition-colors delay-100 hover:bg-amber-500/60 ${
         vertical
           ? "inset-x-0 -top-2 h-1 cursor-row-resize"
-          : "inset-y-0 -left-0.5 w-1 cursor-col-resize"
+          : "inset-y-0 -right-0.5 w-1 cursor-col-resize"
       }`}
     />
   );

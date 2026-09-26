@@ -1,6 +1,6 @@
 // Moves between the landing and the playground in place. Both open with the hero, so a view
 // transition morphs one into the other, both ways. The docs load as a page of their own.
-import { NPM } from "./lib/route.ts";
+import { DOCS, NPM } from "./lib/route.ts";
 
 interface Page {
   /** Returns how to take the page down, if it needs to. */
@@ -8,7 +8,6 @@ interface Page {
 }
 
 const root = document.getElementById("root")!;
-const DOCS = /^\/docs\/?$/;
 let shown: string | undefined;
 let unmount: (() => void) | void;
 let latest = 0;

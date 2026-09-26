@@ -10,16 +10,10 @@ import {
   type Tarball,
 } from "./lib/client.ts";
 import { Dependencies, type Picks } from "./components/deps.tsx";
-import { Editor } from "./components/editor.tsx";
+import { Breadcrumb, Editor } from "./components/editor.tsx";
 import { Explorer, treePath } from "./components/files.tsx";
 import { loadMarkdown } from "./components/markdown.tsx";
-import {
-  changes,
-  installInTab,
-  manifestOf,
-  type Installed,
-  type InstalledFile,
-} from "./lib/install.ts";
+import { installInTab, manifestOf, type Installed, type InstalledFile } from "./lib/install.ts";
 import { Package } from "./components/package.tsx";
 import { Panel, type PanelTab, type Problem } from "./components/panel.tsx";
 import { EXAMPLES, pathOf, specOf } from "./lib/route.ts";
@@ -49,9 +43,8 @@ export interface View {
 export function App({ ready }: { ready?: Promise<unknown> }) {
   const [registryUrl, setRegistryUrl] = useState(DEFAULT_REGISTRY);
   const [spec, setSpec] = useState(() => specOf(location.pathname));
-  // `?fresh` resolves this load without the last lockfile. Read before the first run rewrites
-  // the path, as StrictMode runs the effect below twice.
-  const [fresh] = useState(() => new URLSearchParams(location.search).has("fresh"));
+  // A shared link's run starts after the first draw (and the landing's transition): not the welcome.
+  const [shared] = useState(() => !!spec.trim());
   const [view, setView] = useState<View>();
   const [client, setClient] = useState<Client>();
   const [selected, setSelected] = useState("");
@@ -60,6 +53,11 @@ export function App({ ready }: { ready?: Promise<unknown> }) {
     narrow() ? undefined : "requests",
   );
   const [sidebar, setSidebar] = useState(() => !narrow());
+  const [breadcrumb, setBreadcrumb] = useState<HTMLElement | null>(null);
+  // A breadcrumb part to show in the Explorer; a new object each click, so the same one repeats.
+  const [reveal, setReveal] = useState<{ path: string }>();
+  const column = useRef<HTMLDivElement>(null);
+  const overlay = useRef<HTMLDivElement>(null);
   const [, setTick] = useState(0);
   const picks = useRef<Picks>(new Map());
   /** The last install that finished, shown while a reinstall of the same run is under way. */
@@ -69,7 +67,7 @@ export function App({ ready }: { ready?: Promise<unknown> }) {
   // Many requests and picks move per frame; draw at most once a frame.
   const redraw = useThrottledRedraw(() => setTick((n) => n + 1));
 
-  function submit(raw = spec, registry = registryUrl, after?: Promise<unknown>, fresh = false) {
+  function submit(raw = spec, registry = registryUrl, after?: Promise<unknown>) {
     if (!raw.trim()) return;
     setSpec(raw);
     history.replaceState(null, "", pathOf(raw.trim()));
@@ -97,7 +95,6 @@ export function App({ ready }: { ready?: Promise<unknown> }) {
           redraw();
         },
         after,
-        fresh,
       );
       setView({
         id,
@@ -169,9 +166,36 @@ export function App({ ready }: { ready?: Promise<unknown> }) {
       .finally(() => clearInterval(clock));
   }
 
+  // The editor pads its ends by what floats over them, so both can scroll into view.
+  useEffect(() => {
+    const el = overlay.current!;
+    const measure = () => {
+      const slot = el.firstElementChild as HTMLElement;
+      const panel = el.lastElementChild as HTMLElement;
+      const top = slot.offsetTop + slot.offsetHeight;
+      const bottom = panel === slot ? 0 : el.clientHeight - panel.offsetTop;
+      column.current!.style.setProperty("--covered-top", `${top}px`);
+      column.current!.style.setProperty("--covered-bottom", `${bottom}px`);
+    };
+    const resize = new ResizeObserver(measure);
+    // The panel mounts and unmounts; the breadcrumb slot stays and resizes with what it holds.
+    const watch = () => {
+      resize.disconnect();
+      resize.observe(el);
+      for (const child of el.children) resize.observe(child);
+    };
+    const mutation = new MutationObserver(watch);
+    mutation.observe(el, { childList: true });
+    watch();
+    return () => {
+      resize.disconnect();
+      mutation.disconnect();
+    };
+  }, []);
+
   // A shared link runs its query, once the landing's view transition allows.
   useEffect(() => {
-    if (spec) submit(spec, registryUrl, ready, fresh);
+    if (spec) submit(spec, registryUrl, ready);
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -196,68 +220,95 @@ export function App({ ready }: { ready?: Promise<unknown> }) {
     return early;
   }, [tarball, name, installed, dependencies]);
   const problems = useMemo(() => problemsOf(view), [view]);
+  // A bare name shows the version it resolved to, while the box still holds that run's spec.
+  const top = view?.top instanceof Error ? undefined : view?.top;
+  const version = top && spec === view?.spec && spec.trim() === view.name ? top.version : undefined;
 
   const togglePanel = (tab: PanelTab) => setPanel((open) => (open === tab ? undefined : tab));
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-(--chrome-bg) text-sm text-zinc-900 dark:text-zinc-100">
-      <TopBar spec={spec} setSpec={setSpec} onRun={(raw) => submit(raw)} />
+      <TopBar
+        spec={spec}
+        setSpec={setSpec}
+        onRun={(raw) => submit(raw)}
+        version={version}
+        view={view}
+      />
 
-      {/* Margins grow with the page; the editor runs to the left edge, the sidebar floats on the
-          right. */}
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex min-h-0 flex-1 pb-3">
-          <main className="flex min-w-0 flex-1 flex-col">
-            <div className="min-h-0 flex-1">
+      {/* Margins grow with the page; the sidebar floats on the left at full height, the editor
+          runs to the right edge and the panel sits below it. */}
+      <div className="flex min-h-0 flex-1 pb-3">
+        <Sidebar
+          reveal={reveal}
+          open={sidebar}
+          setOpen={setSidebar}
+          count={view && !view.resolved ? picked : undefined}
+          explorer={
+            <Explorer
+              view={view}
+              files={files}
+              links={installed?.links}
+              picked={picked}
+              selected={selected}
+              reveal={reveal}
+              onSelect={(path) => {
+                setSelected(path);
+                // On a small screen the sidebar covers the editor: get it out of the way.
+                if (narrow()) setSidebar(false);
+              }}
+            />
+          }
+          package={<Package view={view} />}
+          dependencies={
+            <Dependencies
+              started={!!view}
+              picks={picks.current}
+              picked={picked}
+              resolved={view?.resolved}
+            />
+          }
+        />
+
+        {/* The breadcrumb and the panel float over the editor's ends, which scroll under them. */}
+        <div ref={column} className="relative min-w-0 flex-1">
+          <main className="h-full">
+            <Breadcrumb
+              value={{
+                slot: breadcrumb,
+                reveal: (path) => {
+                  setSidebar(true);
+                  setReveal({ path });
+                },
+              }}
+            >
               <Editor
                 view={view}
                 files={files}
                 selected={selected}
                 picked={picked}
+                starting={shared}
                 examples={EXAMPLES}
                 onRun={submit}
               />
-            </div>
+            </Breadcrumb>
           </main>
 
-          <Sidebar
-            open={sidebar}
-            setOpen={setSidebar}
-            count={view && !view.resolved ? picked : undefined}
-            explorer={
-              <Explorer
-                view={view}
-                files={files}
-                links={installed?.links}
-                picked={picked}
-                selected={selected}
-                onSelect={(path) => {
-                  setSelected(path);
-                  // On a small screen the sidebar covers the editor: get it out of the way.
-                  if (narrow()) setSidebar(false);
-                }}
-                changes={changes()}
-              />
-            }
-            package={<Package view={view} />}
-            dependencies={
-              <Dependencies
-                started={!!view}
-                picks={picks.current}
-                picked={picked}
-                resolved={view?.resolved}
-              />
-            }
-          />
-        </div>
+          <div
+            ref={overlay}
+            className="pointer-events-none absolute inset-0 flex flex-col justify-between *:pointer-events-auto"
+          >
+            <div ref={setBreadcrumb} className="shrink-0" />
 
-        <Panel
-          tab={panel}
-          setTab={setPanel}
-          onClose={() => setPanel(undefined)}
-          requests={requests}
-          problems={problems}
-        />
+            <Panel
+              tab={panel}
+              setTab={setPanel}
+              onClose={() => setPanel(undefined)}
+              requests={requests}
+              problems={problems}
+            />
+          </div>
+        </div>
       </div>
 
       <StatusBar

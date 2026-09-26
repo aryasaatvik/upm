@@ -79,7 +79,7 @@ export function Package({ view }: { view: View | undefined }) {
         {manifest?.engines?.node && <Row label="Node">{manifest.engines.node}</Row>}
         {files && (
           <>
-            <Row label="Tarball">{formatBytes(files.bytes)}</Row>
+            <Row label="Tarball">{files.stored ? "in store" : formatBytes(files.bytes)}</Row>
             <Row label="Files">{files.files.length}</Row>
             <Row label="Unpacked">
               {formatBytes(files.files.reduce((sum, f) => sum + f.size, 0))}

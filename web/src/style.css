@@ -55,12 +55,6 @@ html {
   background: var(--chrome-bg);
 }
 
-.file-tree {
-  --trees-bg-override: transparent;
-  --trees-accent-override: #f59e0b;
-  --trees-font-family-override: var(--font-sans);
-}
-
 /* The landing's README. */
 .readme {
   margin: 0 auto;

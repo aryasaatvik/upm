@@ -7,7 +7,7 @@ export function Code({ text, lang }: { text: string; lang: string }) {
   const html = useMemo(() => highlightText(text, { lang }), [text, lang]);
   return (
     <div
-      className="code h-full overflow-auto py-2 pr-4 pl-4 font-mono has-[.shj-numbers]:pl-0 text-xs leading-5 whitespace-pre"
+      className="code h-full overflow-auto pt-[calc(var(--covered-top,0px)+0.5rem)] pb-[calc(var(--covered-bottom,0px)+0.5rem)] pr-4 pl-4 font-mono has-[.shj-numbers]:pl-0 text-xs leading-5 whitespace-pre"
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );

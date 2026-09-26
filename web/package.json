@@ -10,11 +10,11 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "devDependencies": {
-    "@pierre/trees": "latest",
     "@tailwindcss/vite": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "@vitejs/plugin-react": "latest",
+    "dompurify": "latest",
     "md4x": "latest",
     "nitro": "npm:nitro-nightly@latest",
     "pathe": "latest",

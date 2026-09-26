@@ -1,21 +1,21 @@
 // A package's Markdown, rendered by md4x's wasm build (its `browser` export).
 import { highlightText } from "rangi";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 import { Pulse, Waiting } from "./ui.tsx";
 
-type Md4x = typeof import("md4x");
+type Renderer = (text: string, base: string) => string;
 
-let ready: Promise<Md4x> | undefined;
+let ready: Promise<Renderer> | undefined;
 
 /**
- * md4x in its own chunk, loaded once. A run calls this as it starts, so the wasm is ready by the
- * time the tarball lands with the README.
+ * md4x and DOMPurify in their own chunks, loaded once. A run calls this as it starts, so the wasm
+ * is ready by the time the tarball lands with the README.
  */
-export function loadMarkdown(): Promise<Md4x> {
+export function loadMarkdown(): Promise<Renderer> {
   if (!ready) {
-    ready = import("md4x").then(async (md4x) => {
+    ready = Promise.all([import("md4x"), import("dompurify")]).then(async ([md4x, purify]) => {
       await md4x.init();
-      return md4x;
+      return renderer(md4x, purify.default);
     });
     // A failed load tries again on the next run.
     ready.catch(() => (ready = undefined));
@@ -24,29 +24,40 @@ export function loadMarkdown(): Promise<Md4x> {
 }
 
 /**
- * Markdown keeps raw HTML, and a README is the publisher's, so the result goes into a sandboxed
- * frame: no scripts, an opaque origin, and a CSP that loads only images and inline styles.
- * `base` resolves the README's relative links and images.
+ * Markdown keeps raw HTML, and a README is the publisher's, so DOMPurify strips scripts and
+ * other XSS before it goes into the page. `base` resolves the README's relative links and images.
  */
 export function Markdown({ text, base }: { text: string; base: string }) {
-  const [loaded, setLoaded] = useState<Md4x | Error>();
+  const [loaded, setLoaded] = useState<Renderer | Error>();
   useEffect(() => {
-    loadMarkdown().then(setLoaded, (error: Error) => setLoaded(error));
+    loadMarkdown().then(
+      (render) => setLoaded(() => render),
+      (error: Error) => setLoaded(error),
+    );
   }, []);
-  const doc = useMemo(
-    () => (loaded && !(loaded instanceof Error) ? page(render(loaded, text), base) : ""),
+  const html = useMemo(
+    () => (typeof loaded === "function" ? loaded(text, base) : ""),
     [loaded, text, base],
   );
   if (!loaded) return <MarkdownSkeleton />;
   if (loaded instanceof Error) return <Waiting>md4x failed to load: {loaded.message}</Waiting>;
   return (
-    <iframe
-      title="README"
-      sandbox="allow-popups allow-popups-to-escape-sandbox"
-      srcDoc={doc}
-      className="block h-full w-full border-0"
-    />
+    <div
+      className="h-full scroll-pt-(--covered-top) overflow-auto pt-(--covered-top) pb-(--covered-bottom)"
+      onClick={jump}
+    >
+      <article className="readme" dangerouslySetInnerHTML={{ __html: html }} />
+    </div>
   );
+}
+
+/** A `#heading` link scrolls the README; ids carry DOMPurify's `user-content-` prefix. */
+function jump(e: MouseEvent<HTMLElement>) {
+  const href = (e.target as Element).closest("a")?.getAttribute("href");
+  if (!href?.startsWith("#")) return;
+  e.preventDefault();
+  const id = `user-content-${decodeURIComponent(href.slice(1))}`;
+  e.currentTarget.querySelector(`[id="${CSS.escape(id)}"]`)?.scrollIntoView();
 }
 
 /** A README's shape while it loads: a title, badges, prose, headings and a code block. */
@@ -102,49 +113,50 @@ export function MarkdownSkeleton({ children }: { children?: ReactNode }) {
   );
 }
 
-function render({ renderToHtml }: Md4x, text: string): string {
-  return renderToHtml(text, {
-    headingIds: true,
-    // rangi escapes the code; md4x puts what this returns in place of its own block.
-    highlighter: (code, { lang }) =>
-      `<pre>${highlightText(code, { lang: lang || "plain", lineNumbers: false })}</pre>`,
+const GITHUB_BLOB = /^https:\/\/github\.com\/([^/]+\/[^/]+)\/blob\/(.+?)\//;
+
+function renderer(
+  { renderToHtml }: typeof import("md4x"),
+  purify: typeof import("dompurify").default,
+): Renderer {
+  let base = "";
+  // Relative links and images point into the package; other pages open in a new tab.
+  const resolve = (value: string, image: boolean) => {
+    const url = URL.parse(value, base)?.href ?? value;
+    // A GitHub `blob/` link is a page, not the file: GitHub itself shows the raw one.
+    return image ? url.replace(GITHUB_BLOB, "https://raw.githubusercontent.com/$1/$2/") : url;
+  };
+  purify.addHook("afterSanitizeAttributes", (node) => {
+    const href = node.getAttribute("href");
+    if (href && !href.startsWith("#")) node.setAttribute("href", resolve(href, false));
+    const src = node.getAttribute("src");
+    if (src) node.setAttribute("src", resolve(src, true));
+    // `<picture>` sources: `url descriptor, url descriptor`.
+    const srcset = node.getAttribute("srcset");
+    if (srcset) {
+      const set = srcset.split(",").map((part) => {
+        const [url = "", ...rest] = part.trim().split(/\s+/);
+        return [resolve(url, true), ...rest].join(" ");
+      });
+      node.setAttribute("srcset", set.join(", "));
+    }
+    if (node.tagName === "A" && !node.getAttribute("href")?.startsWith("#")) {
+      node.setAttribute("target", "_blank");
+      node.setAttribute("rel", "noopener noreferrer");
+    }
   });
+  return (text, url) => {
+    const html = renderToHtml(text, {
+      headingIds: true,
+      // rangi escapes the code; md4x puts what this returns in place of its own block.
+      highlighter: (code, { lang }) =>
+        `<pre>${highlightText(code, { lang: lang || "plain", lineNumbers: false })}</pre>`,
+    });
+    base = url;
+    // Page-wide styles and forms stay out; ids get a prefix so they cannot clash with the app's.
+    return purify.sanitize(html, {
+      FORBID_TAGS: ["style", "form"],
+      SANITIZE_NAMED_PROPS: true,
+    });
+  };
 }
-
-function page(body: string, base: string): string {
-  const csp = "default-src 'none'; img-src https: data:; style-src 'unsafe-inline'";
-  return `<!doctype html><html><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="${csp}">
-<base href="${encodeURI(base)}" target="_blank">
-<style>${STYLE}</style></head><body>${body}</body></html>`;
-}
-
-const STYLE = `
-:root { color-scheme: light dark; }
-* { scrollbar-width: thin; scrollbar-color: light-dark(#d4d4d8, #3f3f46) transparent; }
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
-::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: 9999px;
-  background: light-dark(#d4d4d8, #3f3f46) padding-box; }
-body {
-  margin: 0 auto; max-width: 860px; padding: 24px 32px 48px;
-  font: 14px/1.6 ui-sans-serif, system-ui, sans-serif;
-  background: transparent; color: light-dark(#27272a, #d4d4d8);
-}
-h1, h2, h3, h4 { color: light-dark(#18181b, #fafafa); line-height: 1.25; margin: 1.5em 0 .6em; }
-h1, h2 { padding-bottom: .3em; border-bottom: 1px solid light-dark(#e4e4e7, #27272a); }
-h1 { font-size: 1.9em; } h2 { font-size: 1.45em; } h3 { font-size: 1.2em; }
-a { color: light-dark(#b45309, #fbbf24); text-decoration: none; }
-a:hover { text-decoration: underline; }
-img { max-width: 100%; }
-p img { vertical-align: middle; }
-code, pre { font: 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace; }
-:not(pre) > code { padding: .15em .35em; border-radius: 4px; background: light-dark(#f4f4f5, #27272a); }
-pre { padding: 12px 16px; border-radius: 6px; overflow: auto; background: light-dark(#fff, #18181b);
-  border: 1px solid light-dark(#e4e4e7, #27272a); }
-blockquote { margin: 0; padding: 0 1em; color: light-dark(#71717a, #a1a1aa);
-  border-left: 3px solid light-dark(#e4e4e7, #3f3f46); }
-table { border-collapse: collapse; display: block; overflow: auto; }
-th, td { padding: 6px 12px; border: 1px solid light-dark(#e4e4e7, #3f3f46); }
-hr { border: 0; border-top: 1px solid light-dark(#e4e4e7, #27272a); }
-`;

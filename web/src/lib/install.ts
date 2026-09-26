@@ -26,6 +26,43 @@ export interface Installed {
 let running: Promise<unknown> = Promise.resolve();
 let shim: typeof import("./node.ts") | undefined;
 
+/** The shim in place as this tab's `process`, loaded on first use. */
+async function ready(): Promise<typeof import("./node.ts")> {
+  shim ??= await import("./node.ts");
+  shim.installShim({ cwd: PROJECT, home: HOME });
+  if (typeof globalThis.process?.getBuiltinModule !== "function") {
+    throw new Error("This page has a `process` of its own, so upm's cannot be put in place");
+  }
+  return shim;
+}
+
+/**
+ * A tarball's files as the store kept them from an earlier install, or undefined when it has
+ * not got them all. Reads only those, not the whole store the install loads.
+ */
+export async function storedFiles(integrity: string): Promise<TarEntry[] | undefined> {
+  try {
+    const read = await (await ready()).reader();
+    const { isIndex, storeDir } = await import("upm/src/store.ts");
+    const { createWriter } = await import("upm/src/unpack.ts");
+    const writer = createWriter(storeDir());
+    const [raw] = await read([writer.indexPath(integrity)]);
+    const index: unknown = raw && JSON.parse(new TextDecoder().decode(raw));
+    if (!isIndex(index)) return undefined;
+    const blobs = await read(index.files.map((file) => writer.blobPath(file.blob)));
+    const files: TarEntry[] = [];
+    for (const [i, file] of index.files.entries()) {
+      const data = blobs[i];
+      if (data?.length !== file.size) return undefined;
+      const mode = file.blob.endsWith("-exec") ? 0o755 : 0o644;
+      files.push({ path: file.path, mode, size: file.size, data });
+    }
+    return files;
+  } catch {
+    return undefined;
+  }
+}
+
 /** The project's package.json, as the install writes it and the tree shows it before then. */
 export function manifestOf(dependencies: Record<string, string>): InstalledFile {
   const manifest = { name: "playground", version: "0.0.0", dependencies };
@@ -45,18 +82,14 @@ export function installInTab(
   lockfile?: string,
 ): Promise<Installed> {
   const run = running.then(async () => {
-    shim ??= await import("./node.ts");
-    shim.installShim({ cwd: PROJECT, home: HOME });
-    if (typeof globalThis.process?.getBuiltinModule !== "function") {
-      throw new Error("This page has a `process` of its own, so upm's cannot be put in place");
-    }
-    if (!(await shim.persist())) {
+    const node = await ready();
+    if (!(await node.persist())) {
       log("the store is in memory only: OPFS is missing here, or another tab keeps it", "warn");
     }
-    shim.fs.rmSync(PROJECT, { recursive: true, force: true });
-    shim.fs.mkdirSync(PROJECT, { recursive: true });
-    shim.fs.writeFileSync(`${PROJECT}/package.json`, manifestOf(dependencies).data);
-    if (lockfile) shim.fs.writeFileSync(`${PROJECT}/upm.lock`, lockfile);
+    node.fs.rmSync(PROJECT, { recursive: true, force: true });
+    node.fs.mkdirSync(PROJECT, { recursive: true });
+    node.fs.writeFileSync(`${PROJECT}/package.json`, manifestOf(dependencies).data);
+    if (lockfile) node.fs.writeFileSync(`${PROJECT}/upm.lock`, lockfile);
     const { install } = await import("upm/src/api.ts");
     const start = performance.now();
     // No release age: the same picks as the resolve beside it, which asks for none.
@@ -71,7 +104,7 @@ export function installInTab(
     const links = new Map<string, string>();
     const top = /^node_modules\/(@[^/]+\/)?[^/.@][^/]*$/;
     const list = (root: string, shown: string) => {
-      for (const [path, entry] of shim!.walk(root)) {
+      for (const [path, entry] of node.walk(root)) {
         const at = shown + path.slice(root.length + 1);
         if (entry.kind === "file") {
           files.set(at, { path: at, mode: entry.mode, size: entry.data.length, data: entry.data });
@@ -91,6 +124,3 @@ export function installInTab(
   running = run.catch(() => {});
   return run;
 }
-
-/** Changes to the filesystem so far: what a run in progress shows. */
-export const changes = () => shim?.changes ?? 0;

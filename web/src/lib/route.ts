@@ -1,6 +1,8 @@
 // Routes: `/` is the landing, `/docs` the README, `/npm/<spec>` the playground for a spec.
+// Any other `/<spec>` redirects to `/npm/<spec>`.
 
 export const NPM = "/npm/";
+export const DOCS = /^\/docs\/?$/;
 
 /** The spec in a `/npm/<spec>` path. */
 export function specOf(pathname: string): string {

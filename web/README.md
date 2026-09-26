@@ -12,8 +12,8 @@ upm's site, built from `../src` (no build of upm needed). Three routes, one `ind
   on one and small on the other. `src/router.ts` moves between the two in place, in a view
   transition, so the logo and the box move into the playground's top bar and back (the
   logo link, or the browser's back and forward). The playground's run waits for the animation.
-- `/npm/<spec>` is the playground for a spec, e.g. `/npm/@nuxt/kit` or `/npm/vue@^3`. Old
-  `?q=<spec>` links redirect there.
+- `/npm/<spec>` is the playground for a spec, e.g. `/npm/@nuxt/kit` or `/npm/vue@^3`. Any other
+  `/<spec>` path and old `?q=<spec>` links redirect there.
 
 `src/` holds the entries and the playground's state (`app.tsx`), `src/components/` the UI, and
 `src/lib/` the rest: the routes, the registry client and the in-tab install.
@@ -41,11 +41,10 @@ with glibc, so the optional native builds are the ones such a machine would get.
 
 The `fs` lives in memory, since upm's sync calls cannot wait for OPFS, and is saved to OPFS
 once writes go quiet. The store outlives the tab; the project is made fresh for each run. One
-tab at a time keeps the store there; another works in memory only. The last lockfile per
-registry and spec is kept on OPFS too (`src/lib/locks.ts`): the next resolve starts from it, so
-only a tag asks the registry again, and the install gets its lockfile and resolves nothing.
-`?fresh` on a `/npm/<spec>` link resolves that load afresh, as after `rm upm.lock`; the
-reinstall button links there.
+tab at a time keeps the store there; another works in memory only. No lockfile is kept between
+loads: each resolves against the registry, as a project with no `upm.lock` does, and hands its
+lockfile to the install. A package the store already has shows its files from there, without a
+download.
 
 `public/og.png`, the Open Graph image, is rendered by `scripts/og.ts` with
 [takumi](https://github.com/kane50613/takumi). Run `node scripts/og.ts` after changing it.

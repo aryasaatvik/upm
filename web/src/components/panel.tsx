@@ -1,4 +1,5 @@
-// The bottom panel: every registry request, and what went wrong.
+// The bottom panel, below the editor and right of the sidebar: every registry request, and what
+// went wrong.
 import { useRef, useState } from "react";
 import type { RequestEntry } from "../lib/client.ts";
 import { formatBytes } from "./code.tsx";
@@ -21,7 +22,7 @@ export function Panel(props: {
   problems: Problem[];
 }) {
   const { tab, requests, problems } = props;
-  const [height, setHeight] = useState(320);
+  const [height, setHeight] = useState(240);
   const [maximized, setMaximized] = useState(false);
   const ref = useRef<HTMLElement>(null);
   if (!tab) return null;
@@ -34,7 +35,7 @@ export function Panel(props: {
       ref={ref}
       // Maximized, it takes all the height and shrinks only by what the content above can't give up.
       style={{ height: maximized ? "100%" : height }}
-      className={`relative flex flex-col px-3 pb-4 sm:px-6 lg:px-10 xl:px-16 ${maximized ? "" : "max-h-[80%] shrink-0"}`}
+      className={`relative mt-3 flex flex-col pr-3 sm:pr-6 lg:pr-10 xl:pr-16 ${maximized ? "" : "max-h-[80%] shrink-0"}`}
     >
       <Sash
         vertical
@@ -44,7 +45,7 @@ export function Panel(props: {
           setHeight(clamp(bottom - e.clientY, 80, innerHeight - 160));
         }}
       />
-      <div className={`flex min-h-0 flex-1 flex-col bg-(--editor-bg) ${ISLAND}`}>
+      <div className={`flex min-h-0 flex-1 flex-col ${ISLAND}`}>
         <div className="flex shrink-0 items-center gap-1 p-1.5">
           <Tabs>
             {tabs.map(([name, label, count]) => (
@@ -84,7 +85,7 @@ function Requests({ requests }: { requests: RequestEntry[] }) {
   const percent = (fraction: number) => `${fraction * 100}%`;
   return (
     <table className="w-full font-mono text-xs">
-      <thead className="sticky top-0 z-10 bg-(--editor-bg) text-left text-[10px] text-zinc-500">
+      <thead className="sticky top-0 z-10 bg-(--editor-bg)/85 backdrop-blur-xl text-left text-[10px] text-zinc-500">
         <tr>
           {/* As wide as the longest path, up to a cap; the waterfall takes the rest. */}
           <th className="w-px py-1 pr-3 pl-3 text-[11px] font-normal">path</th>

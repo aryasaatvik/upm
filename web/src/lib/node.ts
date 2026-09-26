@@ -45,9 +45,6 @@ let inodes = 0;
 let clock = 0;
 let root = dir(0o755);
 
-/** Bumped on every change: a cheap way to tell whether to look again. */
-export let changes = 0;
-
 /** A fresh, empty filesystem, on OPFS too. Anything still writing to the old one writes into nothing. */
 export function reset(): void {
   root = dir(0o755);
@@ -55,7 +52,6 @@ export function reset(): void {
 }
 
 function changed(): void {
-  changes++;
   if (!disk) return;
   clearTimeout(timer);
   timer = setTimeout(() => void flush(), QUIET_MS);
@@ -553,6 +549,45 @@ export function persist(): Promise<boolean> {
   ));
 }
 
+/**
+ * Reads files as the last visit left them, without loading all of OPFS as `persist()` does: a
+ * store that every earlier install filled is thousands of blobs. Memory first, which holds what
+ * this tab wrote and, once `persist()` is done, everything. Undefined for a file neither has.
+ */
+export async function reader(): Promise<(paths: string[]) => Promise<(Uint8Array | undefined)[]>> {
+  const inMemory = (p: string) => {
+    try {
+      const { node } = find(p, true, "open");
+      return node?.kind === "file" ? node.data : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  let blobs: FileSystemDirectoryHandle | undefined;
+  const inos = new Map<string, number>();
+  if (!disk) {
+    try {
+      const home = await (await navigator.storage.getDirectory()).getDirectoryHandle("upm");
+      const rows = JSON.parse(
+        await (await (await home.getFileHandle("meta.json")).getFile()).text(),
+      ) as Row[];
+      for (const [path, kind, ino] of rows) if (kind === "f") inos.set(path, ino);
+      blobs = await home.getDirectoryHandle("blobs");
+    } catch {}
+  }
+  return async (paths) => {
+    const found = paths.map(inMemory);
+    const missing = paths.flatMap((p, i) => (found[i] || !inos.has(p) ? [] : [i]));
+    await each(missing, async (i) => {
+      try {
+        const file = await (await blobs!.getFileHandle(String(inos.get(paths[i]!)))).getFile();
+        found[i] = new Uint8Array(await file.arrayBuffer());
+      } catch {}
+    });
+    return found;
+  };
+}
+
 /** Save now instead of once writes go quiet. */
 export function flush(): Promise<void> {
   clearTimeout(timer);
@@ -610,7 +645,6 @@ async function load(): Promise<void> {
     parent.entries.set(basename(path), node);
   }
   root = next;
-  changes++;
   disk = { home, blobs };
 }
 

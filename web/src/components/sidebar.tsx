@@ -1,5 +1,5 @@
-// The sidebar: an island on the right of the page with a tab per view, resizable, and hidden
-// at a click.
+// The sidebar: a full-height island on the left of the page with a tab per view, resizable,
+// and hidden at a click.
 import { useRef, useState, type ReactNode } from "react";
 import { clamp, Icon, type IconName, ISLAND, Sash, Tab, Tabs } from "./ui.tsx";
 
@@ -15,6 +15,8 @@ export function Sidebar(props: {
   explorer: ReactNode;
   package: ReactNode;
   dependencies: ReactNode;
+  /** A path to show in the Explorer: switches to it. */
+  reveal?: { path: string };
   /** Shown on the Dependencies tab, e.g. the packages picked while the walk runs. */
   count?: number;
   open: boolean;
@@ -22,6 +24,12 @@ export function Sidebar(props: {
 }) {
   const { open, setOpen } = props;
   const [side, setSide] = useState<Side>("files");
+  // Switch while rendering, so the tree opening the way to it commits already shown.
+  const [revealed, setRevealed] = useState(props.reveal);
+  if (props.reveal !== revealed) {
+    setRevealed(props.reveal);
+    setSide("files");
+  }
   // The island's own width; the margins around it grow with the page.
   const [width, setWidth] = useState(288);
   const ref = useRef<HTMLDivElement>(null);
@@ -29,7 +37,7 @@ export function Sidebar(props: {
   return (
     <>
       {!open && (
-        <div className="shrink-0 pr-2 sm:pr-5 lg:pr-9 xl:pr-15">
+        <div className="shrink-0 pl-2 sm:pl-5 lg:pl-9 xl:pl-15">
           <Toggle open={false} onClick={() => setOpen(true)} />
         </div>
       )}
@@ -37,11 +45,13 @@ export function Sidebar(props: {
       {/* Both views stay mounted, so switching keeps their scroll, selection and expansion. */}
       <aside
         style={{ width }}
-        className={`relative box-content max-w-[75vw] shrink-0 flex-col pr-3 pl-3 sm:pr-6 lg:pr-10 xl:pr-16 ${open ? "flex" : "hidden"}`}
+        className={`relative box-content max-w-[75vw] shrink-0 flex-col pr-3 pl-3 sm:pl-6 lg:pl-10 xl:pl-16 ${open ? "flex" : "hidden"}`}
       >
         {/* The sash sits in the gap beside the island. */}
-        <div ref={ref} className={`flex min-h-0 flex-1 flex-col bg-(--editor-bg)/75 ${ISLAND}`}>
+        <div ref={ref} className={`flex min-h-0 flex-1 flex-col ${ISLAND}`}>
           <div className="flex shrink-0 items-center gap-1 p-1.5">
+            {/* Where the closed sidebar keeps its toggle. */}
+            <Toggle open onClick={() => setOpen(false)} />
             <Tabs grow>
               {TABS.map(({ id, title, icon }) => (
                 <Tab key={id} title={title} active={side === id} onClick={() => setSide(id)}>
@@ -50,7 +60,6 @@ export function Sidebar(props: {
                 </Tab>
               ))}
             </Tabs>
-            <Toggle open onClick={() => setOpen(false)} />
           </div>
           <div className={side === "files" ? "contents" : "hidden"}>{props.explorer}</div>
           <div className={side === "package" ? "contents" : "hidden"}>{props.package}</div>
@@ -58,8 +67,8 @@ export function Sidebar(props: {
         </div>
         <Sash
           onDrag={(e) => {
-            const right = ref.current?.getBoundingClientRect().right ?? innerWidth;
-            setWidth(clamp(right - e.clientX - 6, 180, 720));
+            const left = ref.current?.getBoundingClientRect().left ?? 0;
+            setWidth(clamp(e.clientX - left - 6, 180, 720));
           }}
         />
       </aside>

@@ -2,8 +2,6 @@
 import {
   createRegistry,
   formatLockfile,
-  fromLockfile,
-  parseLockfile,
   parseSpec,
   resolveTree,
   toLockfile,
@@ -14,7 +12,7 @@ import {
 } from "upm/resolver";
 import { createVerifier } from "upm/src/integrity.ts";
 import { extractTar, type TarEntry } from "upm/src/tar.ts";
-import { readLock, writeLock } from "./locks.ts";
+import { storedFiles } from "./install.ts";
 
 export const DEFAULT_REGISTRY = "https://registry.npmjs.org";
 
@@ -65,7 +63,10 @@ export interface Run {
 export interface Tarball {
   url: string;
   integrity: string;
+  /** Bytes downloaded; 0 when the files came from the store. */
   bytes: number;
+  /** Read from upm's store, which an earlier install filled: no request was made. */
+  stored: boolean;
   files: TarEntry[];
   ms: number;
 }
@@ -73,15 +74,11 @@ export interface Tarball {
 export interface Client {
   registry: Registry;
   requests: RequestEntry[];
-  /**
-   * `after`: when to start; the parts stay pending until then. `fresh`: walk without the last
-   * lockfile, as with no `upm.lock`.
-   */
+  /** `after`: when to start; the parts stay pending until then. */
   run(
     spec: string,
     onPick: (pkg: ResolvedPackage, from: string) => void,
     after?: Promise<unknown>,
-    fresh?: boolean,
   ): Run;
 }
 
@@ -149,7 +146,7 @@ export function createClient(registryUrl: string, onChange: () => void): Client 
     registry,
     requests,
 
-    run(raw, onPick, after, fresh) {
+    run(raw, onPick, after) {
       const spec = parseSpec(raw.trim());
       if (spec.type === "workspace" || spec.type === "tarball") {
         throw new Error(`Only registry specs here, not ${spec.type}: ${raw}`);
@@ -165,13 +162,11 @@ export function createClient(registryUrl: string, onChange: () => void): Client 
       });
       const resolved = (async () => {
         await after;
-        const locked = fresh ? undefined : lockedFrom(await readLock(registryUrl, dependencies));
         const start = performance.now();
         const resolution = await resolveTree(
           { name: "playground", version: "0.0.0", dependencies },
           {
             registry,
-            locked,
             onPick(pkg, from) {
               if (from === "") picked(pkg);
               onPick(pkg, from);
@@ -180,34 +175,70 @@ export function createClient(registryUrl: string, onChange: () => void): Client 
         );
         const ms = performance.now() - start;
         const lockfile = formatLockfile(toLockfile(resolution, registry.baseFor));
-        void writeLock(registryUrl, dependencies, lockfile);
         return { resolution, ms, lockfile };
       })();
       // A walk that fails before its first pick fails the rest with it; after, this is a no-op.
       resolved.catch(failed);
+      // What an earlier install left in the store answers both, with no request.
+      const stored = top.then((pkg) => (pkg.integrity ? storedFiles(pkg.integrity) : undefined));
       // The record's name is what it installs as; an alias is asked for by its real name.
-      const manifest = top.then(
-        (pkg) => registry.manifest(spec.fetchName, pkg.version) as Promise<FullManifest>,
-      );
-      const tarball = top.then((pkg) => fetchTarball(pkg.resolved, pkg.integrity));
-      for (const promise of [top, manifest, tarball, resolved]) promise.catch(() => {});
+      const manifest = top.then(async (pkg) => {
+        const files = await stored;
+        return (
+          (files && manifestOf(files)) ??
+          (registry.manifest(spec.fetchName, pkg.version) as Promise<FullManifest>)
+        );
+      });
+      const tarball = top.then((pkg) => fetchTarball(pkg.resolved, pkg.integrity, stored));
+      for (const promise of [top, stored, manifest, tarball, resolved]) promise.catch(() => {});
       return { name: spec.name, dependencies, top, manifest, tarball, resolved };
     },
   };
 
-  /** The last walk's lockfile, to keep what still fits: a tag still asks the registry. */
-  function lockedFrom(lockfile: string | undefined) {
+  /**
+   * The package's own package.json, as the panel shows it. What only the registry adds is not
+   * in it: `deprecated`, and `hasInstallScript`, which is worked out here as npm does.
+   */
+  function manifestOf(files: TarEntry[]): FullManifest | undefined {
+    const file = files.find((f) => f.path === "package.json");
+    if (!file) return undefined;
     try {
-      return lockfile === undefined
-        ? undefined
-        : fromLockfile(parseLockfile(lockfile), registry.baseFor);
+      const manifest = JSON.parse(new TextDecoder().decode(file.data)) as FullManifest & {
+        scripts?: Record<string, string>;
+      };
+      const scripts = manifest.scripts ?? {};
+      manifest.hasInstallScript = !!(
+        scripts.preinstall ||
+        scripts.install ||
+        scripts.postinstall ||
+        files.some((f) => f.path === "binding.gyp")
+      );
+      return manifest;
     } catch {
       return undefined;
     }
   }
 
-  async function fetchTarball(url: string, integrity: string): Promise<Tarball> {
+  async function fetchTarball(
+    url: string,
+    integrity: string,
+    fromStore: Promise<TarEntry[] | undefined>,
+  ): Promise<Tarball> {
     if (!integrity) throw new Error(`${url} has no integrity`);
+    const start = performance.now();
+    // The store is keyed by integrity and every file by its own hash: nothing to check again.
+    const stored = await fromStore;
+    if (stored) {
+      stored.sort((a, b) => a.path.localeCompare(b.path));
+      return {
+        url,
+        integrity,
+        bytes: 0,
+        stored: true,
+        files: stored,
+        ms: performance.now() - start,
+      };
+    }
     // WebCrypto exists only in a secure context; upm hashes with it off Node.
     if (!globalThis.crypto?.subtle) {
       throw new Error(
@@ -215,7 +246,6 @@ export function createClient(registryUrl: string, onChange: () => void): Client 
           `Open the playground on http://localhost (forward the port) or serve it over https.`,
       );
     }
-    const start = performance.now();
     const response = await logged(url);
     if (!response.ok || !response.body)
       throw new Error(`Registry returned ${response.status} for ${url}`);
@@ -238,6 +268,6 @@ export function createClient(registryUrl: string, onChange: () => void): Client 
     while (await read());
     await verifier.verify();
     files.sort((a, b) => a.path.localeCompare(b.path));
-    return { url, integrity, bytes, files, ms: performance.now() - start };
+    return { url, integrity, bytes, stored: false, files, ms: performance.now() - start };
   }
 }
