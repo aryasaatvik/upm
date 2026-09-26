@@ -239,13 +239,6 @@ export function createClient(registryUrl: string, onChange: () => void): Client 
         ms: performance.now() - start,
       };
     }
-    // WebCrypto exists only in a secure context; upm hashes with it off Node.
-    if (!globalThis.crypto?.subtle) {
-      throw new Error(
-        `No WebCrypto on ${location.origin}: the integrity check needs https or localhost. ` +
-          `Open the playground on http://localhost (forward the port) or serve it over https.`,
-      );
-    }
     const response = await logged(url);
     if (!response.ok || !response.body)
       throw new Error(`Registry returned ${response.status} for ${url}`);

@@ -13,6 +13,7 @@ import { Dependencies, type Picks } from "./components/deps.tsx";
 import { Breadcrumb, Editor } from "./components/editor.tsx";
 import { Explorer, treePath } from "./components/files.tsx";
 import { loadMarkdown } from "./components/markdown.tsx";
+import { fillCrypto } from "./lib/insecure.ts";
 import { installInTab, manifestOf, type Installed, type InstalledFile } from "./lib/install.ts";
 import { Package } from "./components/package.tsx";
 import { Panel, type PanelTab, type Problem } from "./components/panel.tsx";
@@ -20,6 +21,9 @@ import { EXAMPLES, pathOf, specOf } from "./lib/route.ts";
 import { StatusBar } from "./components/statusbar.tsx";
 import { Sidebar } from "./components/sidebar.tsx";
 import { TopBar } from "./components/topbar.tsx";
+
+// Off https and localhost, WebCrypto is missing: fill it in before anything hashes.
+const insecure = fillCrypto();
 
 /** One query as it lands: each part is undefined while pending, an Error when it failed. */
 export interface View {
@@ -238,7 +242,7 @@ export function App({ ready }: { ready?: Promise<unknown> }) {
 
       {/* Margins grow with the page; the sidebar floats on the left at full height, the editor
           runs to the right edge and the panel sits below it. */}
-      <div className="relative flex min-h-0 flex-1 pb-3">
+      <div className="relative flex min-h-0 flex-1 pb-3 max-sm:flex-col">
         <Sidebar
           reveal={reveal}
           open={sidebar}
@@ -271,7 +275,7 @@ export function App({ ready }: { ready?: Promise<unknown> }) {
         />
 
         {/* The breadcrumb and the panel float over the editor's ends, which scroll under them. */}
-        <div ref={column} className="relative min-w-0 flex-1">
+        <div ref={column} className="relative min-h-0 min-w-0 flex-1 max-sm:ml-3">
           <main className="h-full">
             <Breadcrumb
               value={{
@@ -356,6 +360,7 @@ function problemsOf(view: View | undefined): Problem[] {
   for (const message of view.installWarnings ?? []) {
     problems.push({ level: "warning", source: "install", message });
   }
+  if (insecure) problems.push({ level: "warning", source: "playground", message: insecure });
   return problems;
 }
 

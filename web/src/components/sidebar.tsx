@@ -36,15 +36,20 @@ export function Sidebar(props: {
 
   return (
     <>
-      {/* On a small screen the open sidebar floats over the page, so its toggle keeps the room. */}
-      <div className={`shrink-0 pl-2 sm:pl-5 lg:pl-9 xl:pl-15 ${open ? "sm:hidden" : ""}`}>
+      {/* On a small screen the toggle has its own line above the editor, and keeps it while the
+          open sidebar floats over the page. */}
+      <div
+        className={`shrink-0 pl-2 max-sm:pb-1 sm:pl-5 lg:pl-9 xl:pl-15 ${open ? "sm:hidden" : ""}`}
+      >
         <Toggle open={false} onClick={() => setOpen(true)} />
       </div>
+      {/* A click beside the floating sidebar closes it. */}
+      {open && <div className="absolute inset-0 z-20 sm:hidden" onClick={() => setOpen(false)} />}
 
       {/* Both views stay mounted, so switching keeps their scroll, selection and expansion. */}
       <aside
         style={{ width }}
-        className={`relative box-content max-sm:absolute max-sm:top-0 max-sm:bottom-3 max-sm:left-0 max-sm:z-20 max-w-[75vw] shrink-0 flex-col pr-3 pl-3 sm:pl-6 lg:pl-10 xl:pl-16 ${open ? "flex" : "hidden"}`}
+        className={`relative box-content max-w-[75vw] shrink-0 flex-col pr-3 pl-3 sm:pl-6 lg:pl-10 xl:pl-16 max-sm:absolute max-sm:top-0 max-sm:bottom-3 max-sm:left-0 max-sm:z-20 max-sm:flex max-sm:origin-top-left max-sm:transition-[opacity,scale,visibility] max-sm:duration-200 max-sm:ease-out max-sm:motion-reduce:transition-none ${open ? "flex" : "hidden max-sm:invisible max-sm:scale-95 max-sm:opacity-0"}`}
       >
         {/* The sash sits in the gap beside the island. */}
         <div ref={ref} className={`flex min-h-0 flex-1 flex-col ${ISLAND}`}>
