@@ -293,12 +293,45 @@ describe.skipIf(process.platform === "win32")("run", () => {
     const b = await manifest("packages/b");
     b.scripts.build = "echo build b; exit 3";
     await pkg("packages/b", b);
+    expect(await upm("", "install")).toMatchObject({ code: 0 });
     const result = await upm("", "run", "--workspaces", "build");
     expect(result.code).toBe(3);
     expect(result.stdout).toBe("build b\nbuild a\n");
     expect(result.stderr).toBe(
       "> b: build\n> echo build b; exit 3\n> a: build\n> echo build a\nupm: build failed in b (packages/b) with code 3\n",
     );
+  });
+
+  it("installs the whole tree first, from inside a workspace, then finds it current", async () => {
+    const first = await upm("packages/a", "run", "build");
+    expect(first).toMatchObject({ code: 0, stdout: "build a\n" });
+    expect(first.stderr).toContain("upm: installed 2 packages\n> build\n");
+    expect(await linkOf(join(dir, "packages", "a", "node_modules", "nanoid"))).toBeTruthy();
+    expect(await binOf(join(dir, "packages", "a", "node_modules", ".bin", "b-cli"))).toBeTruthy();
+    const asked = requests.length;
+    const again = await upm("packages/a", "build");
+    expect(again).toMatchObject({
+      code: 0,
+      stdout: "build a\n",
+      stderr: "> build\n> echo build a\n",
+    });
+    expect(requests.length).toBe(asked);
+  });
+
+  it("keeps a --production tree production", async () => {
+    expect(await upm("", "install", "--production")).toMatchObject({ code: 0 });
+    const result = await upm("packages/b", "run", "build");
+    expect(result).toMatchObject({ code: 0, stderr: "> build\n> echo build b\n" });
+    await expect(read("packages/b/node_modules/c/index.js")).rejects.toThrow();
+  });
+
+  it("installs nothing for a missing script, or a project with nothing to install", async () => {
+    expect((await upm("", "run", "nope")).code).toBe(1);
+    await pkg("lone", { name: "lone", scripts: { hi: "echo hi" } });
+    expect(await upm("lone", "run", "hi")).toMatchObject({ code: 0, stdout: "hi\n" });
+    await expect(read("upm.lock")).rejects.toThrow();
+    await expect(read("lone/upm.lock")).rejects.toThrow();
+    expect(requests).toEqual([]);
   });
 
   it("skips a workspace without the script under --if-present, and fails it otherwise", async () => {

@@ -201,6 +201,7 @@ const lockfile = await lock({ dir: "./my-project", write: false }); // { root, p
 const { code, results } = await run("build", {
   dir: "./my-project",
   workspaces: "all",
+  install: true, // install the tree first, as `upm run` does
 }); // { code: 0, results: [{ name: "app", path, file, code: 0 }] }
 
 // Other exports
@@ -301,6 +302,11 @@ upm run test -- --watch    # the first -- is optional
 upm run --dir ./app build
 upm run --if-present lint  # no lint script is not an error
 ```
+
+Before a script runs, upm installs the project it belongs to, workspace root and all,
+so dependencies are current. When nothing changed this is a quick check, and a tree
+installed with `--production` stays that way. A project that declares no dependencies
+and was never installed is left alone.
 
 Scripts run in a shell from the selected package directory. Local
 `node_modules/.bin` directories are added to `PATH`, so scripts can use installed

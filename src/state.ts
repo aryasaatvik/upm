@@ -20,6 +20,8 @@ export interface InstallState {
   complete: boolean;
   /** Absolute path of the content store this tree was linked from. */
   store: string;
+  /** Linked under `production`, so an install on its own behalf (`run`'s) keeps it that way. */
+  production?: true;
   /**
    * `inputsHash` of what the install was made from, when that was the lockfile and the root
    * manifest alone (no workspaces): the next install with the same bytes and settings can find

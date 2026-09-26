@@ -214,9 +214,15 @@ export interface ListScriptsOptions extends ProjectOptions, WorkspaceOptions {
   includeRoot?: boolean;
 }
 
-export interface RunOptions extends ListScriptsOptions {
+export interface RunOptions extends ListScriptsOptions, RegistryAccess, StoreAccess {
   /** Appended to the command, quoted for the shell. */
   args?: string[];
+  /**
+   * Install the tree first, when a script is found: the whole tree the package is in, kept
+   * `production` and on the store it was linked from. A project with nothing to install and no
+   * tree is left alone. Default false.
+   */
+  install?: boolean;
   /** A package without the script is passed over instead of failing. */
   ifPresent?: boolean;
   /** Told each script just before it starts. `workspace` is set under `workspaces`. */
@@ -420,11 +426,14 @@ function count(value: unknown, max = Number.MAX_SAFE_INTEGER): boolean {
 
 /** The root and its `.npmrc`, read first by every command but `run`. */
 async function open(options: Context["options"], dedupe = false): Promise<Context> {
-  const ctx = context(options, dedupe);
+  return await opened(context(options, dedupe));
+}
+
+async function opened(ctx: Context): Promise<Context> {
   trace("open");
   const root = await projectDir(ctx);
   trace("root");
-  ctx.config = readConfig(root, options);
+  ctx.config = readConfig(root, ctx.options);
   trace("config");
   // As npm: one .npmrc for the tree, or two workspaces could install one lockfile two ways.
   const own = ctx.inside && builtin.path.join(ctx.inside.dir, ".npmrc");
@@ -450,9 +459,9 @@ export async function dedupe(options: DedupeOptions = {}): Promise<InstallResult
   return await installTree(await open({ ...options, frozen: false }, true));
 }
 
-async function installTree(ctx: Context, edit?: Edit): Promise<InstallResult> {
+async function installTree(ctx: Context, edit?: Edit, loaded?: Project): Promise<InstallResult> {
   const { options, log } = ctx;
-  const project = edit?.project ?? (await loadProject(ctx));
+  const project = edit?.project ?? loaded ?? (await loadProject(ctx));
   trace("project");
   const { dir } = project;
   // Before the lockfile: the pool wants to know now whether there is a tree to compare.
@@ -970,7 +979,12 @@ export async function run(script: string, options: RunOptions = {}): Promise<Run
   const { args = [], ifPresent } = options;
   const logged = options.workspaces !== undefined;
   const results: ScriptResult[] = [];
-  for (const { name, path, file, dir, manifest } of await packages(ctx)) {
+  const tops = await packages(ctx);
+  const found = tops.some(({ manifest, file }) =>
+    Object.hasOwn(readScripts(manifest, file), script),
+  );
+  if (options.install && found) await installFirst(ctx);
+  for (const { name, path, file, dir, manifest } of tops) {
     const scripts = readScripts(manifest, file);
     // `hasOwn`, or a script named `constructor` would run the prototype's function.
     if (!Object.hasOwn(scripts, script)) {
@@ -991,6 +1005,38 @@ export async function run(script: string, options: RunOptions = {}): Promise<Run
     }
   }
   return { code: failed.length > 0 ? (failed[0]!.code ?? 1) : 0, results };
+}
+
+/** `run`'s install: of the tree its packages are in, as that tree was last installed. */
+async function installFirst(ctx: Context): Promise<void> {
+  const { options } = ctx;
+  // Without `workspaces`, `run` reads `dir`'s own package.json: its tree may start above it.
+  let found: Root | undefined;
+  if (ctx.root === undefined) {
+    const { findRoot } = await import("./workspaces.ts");
+    found = await findRoot(builtin.path.resolve(options.dir ?? globalThis.process.cwd()));
+  }
+  const root = found?.dir ?? ctx.root!;
+  const state = await readState(root);
+  const install = context({
+    ...options,
+    dir: root,
+    workspaces: undefined,
+    production: state?.production,
+    store: options.store ?? state?.store,
+  });
+  install.found = found ?? ctx.found;
+  install.inside = found ? found.workspace : ctx.inside;
+  const project = await loadProject(await opened(install));
+  const { dependencies, devDependencies, optionalDependencies } = project.manifest;
+  const declared = [dependencies, devDependencies, optionalDependencies].some(
+    (group) => group && Object.keys(group).length > 0,
+  );
+  // No lockfile or node_modules for a project that never needed one.
+  if (!state && !declared && project.workspaces.length === 0) return;
+  const result = await installTree(install, undefined, project);
+  for (const id of result.missingOptional) ctx.log(`${id} is missing from the store`, "warn");
+  if (!result.upToDate) ctx.log(`installed ${result.packages} packages`, "info");
 }
 
 /**

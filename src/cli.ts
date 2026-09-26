@@ -105,7 +105,8 @@ Notes
   New picks skip versions under min-release-age days old (default 1; 0 turns it off),
   or newer than before=<date>; min-release-age-exclude[] names or globs are exempt.
 
-  run uses a project shell with local/parent bins on PATH; no pre/post scripts.
+  run installs the tree first (a no-op when it is current), then uses a project shell
+  with local/parent bins on PATH; no pre/post scripts.
   Put upm flags before the script; later args pass through (-- optional).
   run alone lists scripts; upm test = upm run test.
   exec (also upx) uses local bins, else installs into the root's node_modules/.upm/exec
@@ -655,7 +656,16 @@ async function runCommand(cli: Cli): Promise<number> {
   }
   let result: RunResult;
   try {
-    result = await run(name, { ...options, args });
+    result = await run(name, {
+      ...options,
+      args,
+      install: true,
+      registry: cli.registry,
+      minReleaseAge: cli.minReleaseAge,
+      before: cli.before,
+      minReleaseAgeExclude: cli.minReleaseAgeExclude,
+      store: cli.store,
+    });
   } catch (error) {
     // No package.json to find a script in, so `upm nope` is a typo in the command. A
     // package.json that is there but broken is still the news, and so is a --dir that is not.

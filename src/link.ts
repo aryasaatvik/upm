@@ -206,6 +206,7 @@ export async function linkTree(resolution: Resolution, options: LinkOptions): Pr
     entries,
     complete,
     store: builtin.path.resolve(store.dir),
+    ...(production && { production: true as const }),
     ...(options.tarballs && { tarballs: options.tarballs }),
     ...(inputs &&
       tops.length === 1 && {
