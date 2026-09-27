@@ -172,7 +172,7 @@ function Requests({ requests }: { requests: RequestEntry[] }) {
 const GRID =
   "bg-[linear-gradient(to_left,rgb(0_0_0/0.07)_1px,transparent_1px)] bg-size-[25%_100%] bg-right dark:bg-[linear-gradient(to_left,rgb(255_255_255/0.07)_1px,transparent_1px)]";
 
-function formatMs(ms: number): string {
+export function formatMs(ms: number): string {
   return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(2)} s`;
 }
 

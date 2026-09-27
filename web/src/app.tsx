@@ -1,12 +1,14 @@
 // The app as an IDE: top bar, sidebar views, the editor, a bottom panel and a status bar.
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ResolvedPackage } from "upm/resolver";
+import { runsOn } from "upm/src/resolve.ts";
 import {
   createClient,
   DEFAULT_REGISTRY,
   type Client,
   type FullManifest,
   type Resolved,
+  type Size,
   type Tarball,
 } from "./lib/client.ts";
 import { Dependencies, type Picks } from "./components/deps.tsx";
@@ -14,7 +16,13 @@ import { Breadcrumb, Editor } from "./components/editor.tsx";
 import { Explorer, treePath } from "./components/files.tsx";
 import { loadMarkdown } from "./components/markdown.tsx";
 import { fillCrypto } from "./lib/insecure.ts";
-import { installInTab, manifestOf, type Installed, type InstalledFile } from "./lib/install.ts";
+import {
+  installInTab,
+  installProgress,
+  manifestOf,
+  type Installed,
+  type InstalledFile,
+} from "./lib/install.ts";
 import { Package } from "./components/package.tsx";
 import { Panel, type PanelTab, type Problem } from "./components/panel.tsx";
 import { EXAMPLES, pathOf, specOf } from "./lib/route.ts";
@@ -24,6 +32,9 @@ import { TopBar } from "./components/topbar.tsx";
 
 // Off https and localhost, WebCrypto is missing: fill it in before anything hashes.
 const insecure = fillCrypto();
+
+/** The platform ./lib/node.ts's shim says it is: the install skips other platforms' builds. */
+const PLATFORM = { os: "linux", cpu: "x64", libc: "glibc" };
 
 /** One query as it lands: each part is undefined while pending, an Error when it failed. */
 export interface View {
@@ -52,10 +63,9 @@ export function App({ ready }: { ready?: Promise<unknown> }) {
   const [view, setView] = useState<View>();
   const [client, setClient] = useState<Client>();
   const [selected, setSelected] = useState("");
-  // Open on the requests, unless the screen is too small to spare the room.
-  const [panel, setPanel] = useState<PanelTab | undefined>(() =>
-    narrow() ? undefined : "requests",
-  );
+  const [panel, setPanel] = useState<PanelTab>();
+  // Once the panel was opened or closed, it stays as left. A small screen can't spare the room.
+  const panelSet = useRef(narrow());
   const [sidebar, setSidebar] = useState(true);
   const [breadcrumb, setBreadcrumb] = useState<HTMLElement | null>(null);
   // A breadcrumb part to show in the Explorer; a new object each click, so the same one repeats.
@@ -64,6 +74,8 @@ export function App({ ready }: { ready?: Promise<unknown> }) {
   const overlay = useRef<HTMLDivElement>(null);
   const [, setTick] = useState(0);
   const picks = useRef<Picks>(new Map());
+  /** The picks the registry gave a size for. */
+  const sized = useRef<{ pkg: ResolvedPackage; size: Size }[]>([]);
   /** The last install that finished, shown while a reinstall of the same run is under way. */
   const last = useRef<{ id: number; installed: Installed }>(undefined);
   const run = useRef(0);
@@ -81,6 +93,8 @@ export function App({ ready }: { ready?: Promise<unknown> }) {
     const next = createClient(registry, redraw);
     const live: Picks = new Map();
     picks.current = live;
+    const sizes: { pkg: ResolvedPackage; size: Size }[] = [];
+    sized.current = sizes;
     setClient(next);
     const update = (part: Partial<View>) =>
       run.current === id && setView((view) => view && { ...view, ...part });
@@ -92,7 +106,8 @@ export function App({ ready }: { ready?: Promise<unknown> }) {
     try {
       const query = next.run(
         raw,
-        (pkg, from) => {
+        (pkg, from, size) => {
+          if (size) sizes.push({ pkg, size });
           const list = live.get(from) ?? [];
           list.push({ name: pkg.name, version: pkg.source ?? pkg.version, optional: pkg.optional });
           live.set(from, list);
@@ -225,12 +240,37 @@ export function App({ ready }: { ready?: Promise<unknown> }) {
     for (const file of tarball?.files ?? []) early.set(treePath(name, file.path), file);
     return early;
   }, [tarball, name, installed, dependencies]);
+  // Until the install lands, what the registry says it will write here. A libc read that lands
+  // later drops a pick, so it is summed again each draw.
+  const estimate =
+    installed || view?.installed instanceof Error ? undefined : estimateOf(sized.current);
+  // Half for the store filling, half for the project it links into, or all the project when an
+  // earlier run in this tab left the store full. Drawn on the install's clock. Pending while
+  // there is nothing to measure yet: the resolve, and the install's first downloads.
+  const busy =
+    !!view &&
+    !(view.top instanceof Error || view.resolved instanceof Error) &&
+    (view.installed === undefined || view.installed === true);
+  const progress = busy ? progressOf(view.installed === true, estimate) : undefined;
   const problems = useMemo(() => problemsOf(view), [view]);
   // A bare name shows the version it resolved to, while the box still holds that run's spec.
   const top = view?.top instanceof Error ? undefined : view?.top;
   const version = top && spec === view?.spec && spec.trim() === view.name ? top.version : undefined;
 
-  const togglePanel = (tab: PanelTab) => setPanel((open) => (open === tab ? undefined : tab));
+  // The panel opens on its own once it has a request or a problem to show.
+  const hasEntries = requests.length > 0 || problems.length > 0;
+  useEffect(() => {
+    if (!hasEntries || panelSet.current) return;
+    panelSet.current = true;
+    setPanel(requests.length > 0 ? "requests" : "problems");
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasEntries]);
+
+  const choosePanel = (tab: PanelTab | undefined) => {
+    panelSet.current = true;
+    setPanel(tab);
+  };
+  const togglePanel = (tab: PanelTab) => choosePanel(panel === tab ? undefined : tab);
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-(--chrome-bg) text-sm text-zinc-900 dark:text-zinc-100">
@@ -255,6 +295,8 @@ export function App({ ready }: { ready?: Promise<unknown> }) {
               view={view}
               files={files}
               links={installed?.links}
+              estimate={estimate}
+              progress={progress}
               picked={picked}
               selected={selected}
               reveal={reveal}
@@ -308,8 +350,8 @@ export function App({ ready }: { ready?: Promise<unknown> }) {
 
             <Panel
               tab={panel}
-              setTab={setPanel}
-              onClose={() => setPanel(undefined)}
+              setTab={choosePanel}
+              onClose={() => choosePanel(undefined)}
               requests={requests}
               problems={problems}
             />
@@ -332,6 +374,28 @@ export function App({ ready }: { ready?: Promise<unknown> }) {
       />
     </div>
   );
+}
+
+function progressOf(installing: boolean, estimate: Size | undefined): number | "pending" {
+  if (!installing || !estimate?.bytes) return "pending";
+  const { store, project } = installProgress();
+  const s = Math.min(1, store / estimate.bytes);
+  const p = project / estimate.bytes;
+  const done = Math.max(p, (s + p) / 2);
+  if (done <= 0) return "pending";
+  // The estimate fills 90%. Past it, the rest is only ever approached: installs run over it.
+  return done <= 1 ? done * 0.9 : 0.99 - 0.09 * Math.exp(-10 * (done - 1));
+}
+
+/** What the picks that run here unpack to, as the registry says. */
+function estimateOf(sized: { pkg: ResolvedPackage; size: Size }[]): Size {
+  const sum = { files: 0, bytes: 0 };
+  for (const { pkg, size } of sized) {
+    if (!runsOn(pkg, PLATFORM)) continue;
+    sum.files += size.files;
+    sum.bytes += size.bytes;
+  }
+  return sum;
 }
 
 /** Too small a screen to spare room for the panel, or for the sidebar beside the editor. */

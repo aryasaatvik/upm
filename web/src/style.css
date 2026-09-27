@@ -10,6 +10,16 @@
       opacity: 0;
     }
   }
+  /* A bar with no measure yet: a third of it sweeps across. */
+  --animate-pending: pending 1.2s ease-in-out infinite;
+  @keyframes pending {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(300%);
+    }
+  }
 }
 
 html {

@@ -6,7 +6,7 @@ import type { Resolution } from "upm/resolver";
 import type { View } from "../app.tsx";
 import { DEFAULT_REGISTRY, type RequestEntry } from "../lib/client.ts";
 import { formatBytes } from "./code.tsx";
-import type { PanelTab, Problem } from "./panel.tsx";
+import { formatMs, type PanelTab, type Problem } from "./panel.tsx";
 import { Badge, Icon, Pulse } from "./ui.tsx";
 
 export function StatusBar(props: {
@@ -38,7 +38,7 @@ export function StatusBar(props: {
     state = (
       <span className="flex items-center gap-1.5" title="Resolve time">
         <Icon name="check" className="size-3 text-emerald-600" />
-        {Math.round(view.resolved.ms)} ms
+        <Dim>resolve</Dim> {formatMs(view.resolved.ms)}
       </span>
     );
   } else if (view) {
@@ -78,6 +78,7 @@ export function StatusBar(props: {
 
         <div className="ml-auto flex items-center">
           <Item>{state}</Item>
+          <Install view={view} />
           {tarball && (
             <Item
               title={
@@ -211,6 +212,31 @@ function Deprecated({ view }: { view: View | undefined }) {
     <span title={String(manifest.deprecated)} className="px-1.5">
       <Badge tone="red">deprecated</Badge>
     </span>
+  );
+}
+
+/** upm's install in this tab, which follows the resolve. */
+function Install({ view }: { view: View | undefined }) {
+  if (!view?.resolved || view.resolved instanceof Error || !view.installed) return null;
+  if (view.installed === true) {
+    return (
+      <Item>
+        <Pulse /> Installing
+      </Item>
+    );
+  }
+  if (view.installed instanceof Error) {
+    return (
+      <Item className="text-red-600 dark:text-red-400">
+        <Icon name="error" className="size-3" /> Install failed
+      </Item>
+    );
+  }
+  return (
+    <Item title="Install time, upm in this tab">
+      <Icon name="check" className="size-3 text-emerald-600" />
+      <Dim>install</Dim> {formatMs(view.installed.ms)}
+    </Item>
   );
 }
 

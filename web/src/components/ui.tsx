@@ -72,6 +72,7 @@ const ICONS = {
     </>
   ),
   download: <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4m4-5 5 5 5-5m-5 5V3" />,
+  reload: <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8m0-5v5h-5" />,
   chevron: <path d="m9 18 6-6-6-6" />,
   sidebar: (
     <>

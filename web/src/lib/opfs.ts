@@ -50,6 +50,22 @@ export async function opfsBackend(): Promise<StoreBackend | undefined> {
   };
 }
 
+let asked = false;
+
+/**
+ * Ask the browser, once a page, not to evict OPFS when the disk runs low. Chrome decides on
+ * its own, Firefox asks the user; either may say no, and the store stays best-effort.
+ */
+export function persist(): void {
+  if (asked) return;
+  asked = true;
+  const storage = navigator.storage;
+  void storage
+    ?.persisted?.()
+    .then((kept) => kept || storage.persist())
+    .catch(() => {});
+}
+
 async function open(): Promise<FileSystemDirectoryHandle | undefined> {
   try {
     const root = await navigator.storage.getDirectory();

@@ -6,7 +6,7 @@ import type { InstallResult } from "upm/src/api.ts";
 import type { TarEntry } from "upm/src/tar.ts";
 import { blobKey, indexKey } from "upm/src/store-backend.ts";
 import type { BackendIndex } from "upm/src/store-backend.ts";
-import { opfsBackend } from "./opfs.ts";
+import { opfsBackend, persist } from "./opfs.ts";
 
 const PROJECT = "/project";
 const HOME = "/home/user";
@@ -99,6 +99,17 @@ export function manifestOf(dependencies: Record<string, string>): InstalledFile 
   return { path: "package.json", mode: 0o644, size: data.length, data };
 }
 
+const STORE = `${HOME}/.upm/store/`;
+
+/**
+ * How far the running install has got: bytes written into the store and into the project.
+ * Each ends near the unpacked size of what it installs.
+ */
+export function installProgress(): { store: number; project: number } {
+  const written = shim?.written;
+  return { store: written?.[STORE] ?? 0, project: written?.[`${PROJECT}/`] ?? 0 };
+}
+
 /**
  * Install `dependencies` into a fresh `/project`. One run at a time: they share the filesystem.
  * With the walk's `lockfile` as its `upm.lock`, upm installs what the walk picked, resolving
@@ -118,6 +129,8 @@ export function installInTab(
     node.fs.mkdirSync(PROJECT, { recursive: true });
     node.fs.writeFileSync(`${PROJECT}/package.json`, manifestOf(dependencies).data);
     if (lockfile) node.fs.writeFileSync(`${PROJECT}/upm.lock`, lockfile);
+    node.written[STORE] = 0;
+    node.written[`${PROJECT}/`] = 0;
     const { install } = await import("upm/src/api.ts");
     const start = performance.now();
     // No release age: the same picks as the resolve beside it, which asks for none.
@@ -134,6 +147,8 @@ export function installInTab(
       log: quiet,
     });
     const ms = performance.now() - start;
+    // The store now holds something worth keeping.
+    if (storeBackend?.set) persist();
     const files = new Map<string, InstalledFile>();
     const links = new Map<string, string>();
     const top = /^node_modules\/(@[^/]+\/)?[^/.@][^/]*$/;
@@ -152,7 +167,7 @@ export function installInTab(
       }
     };
     list(PROJECT, "");
-    list(`${HOME}/.upm/store`, "~/.upm/store/");
+    list(STORE.slice(0, -1), "~/.upm/store/");
     return { files, links, result, ms };
   });
   running = run.catch(() => {});
