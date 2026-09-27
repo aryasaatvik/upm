@@ -86,7 +86,8 @@ export default defineBuildConfig({
             "main",
             "api|link|keys|state|store|package-json|config|gc|exec|run|types|workspaces",
           ),
-          ...groups,
+          // obuild's own `libs/*` group names chunks with a function; label it for rolldown.
+          ...groups.map((g) => (typeof g.name === "function" ? { debugName: "libs", ...g } : g)),
         ],
       };
     },
