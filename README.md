@@ -9,7 +9,7 @@
 ⚡ A fast, tiny package manager for the npm registry, written in TypeScript.
 
 - 🟦 **Pure JS:** built with TypeScript and Node.js builtins.
-- 🪶 **Small:** about 200 KB on disk, small enough to bundle into your own tools.
+- 🪶 **Small:** about 256 KB on disk (85 KB packed), small enough to bundle into your own tools.
 - 🚀 **Fast:** install speed on par with package managers written in Rust.
 - 🧩 **Programmable:** every command is also a JavaScript function you can import.
 - 🎯 **Simple:** no new config files or conventions. Your existing `.npmrc` just works.

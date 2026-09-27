@@ -53,8 +53,8 @@ function installer(bare = false) {
 }
 
 const NPMRC = `<code class="rounded bg-zinc-100 px-1 py-0.5 font-mono text-xs text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">.npmrc</code>`;
-const KB = `<strong class="font-semibold text-amber-600 dark:text-amber-400">~250 KB</strong>`;
-const NOTE = `<p class="text-sm text-zinc-500">Works with ${NODE} Node.js, your existing ${NPMRC} and npm, pnpm or bun lockfiles. Takes ${KB} of disk space.</p>`;
+const KB = `<strong class="font-semibold text-amber-600 dark:text-amber-400">~256 KB</strong>`;
+const NOTE = `<p class="text-sm text-zinc-500">Works with ${NODE} Node.js, your existing ${NPMRC} and npm, pnpm or bun lockfiles. Takes ${KB} of disk space (85 KB packed).</p>`;
 
 /**
  * The card: "Install upm" over a terminal. With `spec`, it has no title or frame, and a second command
@@ -72,7 +72,7 @@ export function installCard(className = "", spec?: string) {
   <h2 class="mb-3 text-center text-sm font-semibold text-zinc-900 dark:text-zinc-100">Install upm</h2>
   <div class="space-y-1 rounded-2xl border border-zinc-200 bg-(--editor-bg) p-5 font-mono text-sm shadow-2xl shadow-amber-500/10 dark:border-zinc-800">
   ${installer(true)}
-  <p class="pt-2 text-xs text-zinc-400 dark:text-zinc-500">Works with Node.js, your .npmrc and npm, pnpm or bun lockfiles. Takes ${KB} of disk space.</p>
+  <p class="pt-2 text-xs text-zinc-400 dark:text-zinc-500">Works with Node.js, your .npmrc and npm, pnpm or bun lockfiles. Takes ${KB} of disk space (85 KB packed).</p>
   </div>
 </aside>`;
 }
