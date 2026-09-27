@@ -1,5 +1,5 @@
-// Moves between the landing and the app in place. Both open with the hero, so a view
-// transition morphs one into the other, both ways. The docs load as a page of their own.
+// Moves between the landing, the app and the docs in place. All open with the logo, so a view
+// transition morphs one into the other, both ways.
 import { DOCS, NPM } from "./lib/route.ts";
 
 interface Page {
@@ -32,8 +32,8 @@ export async function route(morph = false) {
     unmount = page.mount(root, ready);
   };
   if (!morph || !document.startViewTransition) return show();
-  // Which way the hero goes, for src/style.css.
-  document.documentElement.dataset.to = path.startsWith(NPM) ? "play" : "landing";
+  // Which size the logo ends at, for src/style.css. Only the landing shows it large.
+  document.documentElement.dataset.to = path.startsWith(NPM) || DOCS.test(path) ? "small" : "large";
   // The app's run starts once the animation ends; its work on this thread would drop frames.
   const transition = document.startViewTransition(() => show(transition.finished.catch(() => {})));
 }
@@ -49,12 +49,27 @@ addEventListener("popstate", () => {
   if (location.pathname !== shown) void route(true);
 });
 
-// Links between the landing and the app stay in the page.
+// Links between the pages stay in the page.
 root.addEventListener("click", (e) => {
   const link = (e.target as Element).closest("a");
   // A click that asks for a new tab or window keeps the link's own way.
   if (!link || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || link.target) return;
-  if (link.origin !== location.origin || DOCS.test(link.pathname) || DOCS.test(shown ?? "")) return;
+  // A hash link within the page is left to the browser.
+  if (link.origin !== location.origin || link.pathname === location.pathname) return;
   e.preventDefault();
-  navigate(link.pathname);
+  navigate(link.pathname + link.hash);
+});
+
+// Cmd, Ctrl or Alt and a letter open the link that names it in `data-key`: u the landing,
+// d the docs, g GitHub. k names the spec box, which takes focus instead; / does the same.
+addEventListener("keydown", (e) => {
+  if (e.repeat || e.shiftKey || !(e.metaKey || e.ctrlKey || e.altKey)) return;
+  // Alt changes the character on Mac, so it goes by the key's place instead.
+  const key =
+    e.code === "Slash" ? "k" : (e.altKey ? e.code.replace(/^Key/, "") : e.key).toLowerCase();
+  const el = /^[a-z]$/.test(key) && document.querySelector<HTMLElement>(`[data-key="${key}"]`);
+  if (!el) return;
+  e.preventDefault();
+  if (el instanceof HTMLInputElement) el.select();
+  else el.click();
 });

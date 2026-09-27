@@ -3,11 +3,15 @@
 // app. Their view-transition names let the logo and the box morph from one to the other.
 export { default as logo } from "virtual:readme/logo";
 
-/** The top-right links: the docs as a button, then GitHub. */
-export const NAV = "absolute top-3 right-4 flex items-center gap-3 text-xs sm:right-8";
-export const DOCS =
-  "rounded-md border border-zinc-300 px-2.5 py-1 font-medium text-zinc-700 transition-colors hover:border-amber-500 hover:text-amber-600 dark:border-zinc-700 dark:text-zinc-300 dark:hover:text-amber-400";
-export const GITHUB = "text-zinc-500 hover:text-amber-600";
+/** The top-right links, Docs and GitHub, each an icon and a label, then the theme toggle. `data-key` names the key
+ * that opens one (src/router.ts), and `KEY` underlines that letter in the label. */
+export const NAV = "absolute top-3 right-4 flex items-center gap-2 text-xs sm:right-8";
+const OUTLINE =
+  "rounded-md border border-zinc-300 font-medium text-zinc-700 transition-colors hover:border-amber-500 hover:text-amber-600 dark:border-zinc-700 dark:text-zinc-300 dark:hover:text-amber-400";
+export const LINK = `flex items-center gap-1.5 px-2.5 py-1 ${OUTLINE}`;
+/** The theme toggle (src/theme.ts), a square as tall as the links. */
+export const TOGGLE = `grid size-6.5 cursor-pointer place-items-center ${OUTLINE}`;
+export const KEY = "underline underline-offset-2";
 export const REPO = "https://github.com/unjs/upm";
 export const LOGO = "flex justify-center [view-transition-name:logo] [&_img]:w-auto";
 export const FORM =
@@ -33,7 +37,32 @@ export const SEARCH = {
   className: "ml-4 size-4 shrink-0 self-center text-zinc-400 group-focus-within:text-amber-500",
   paths: `<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>`,
 };
+export const BOOK = {
+  className: "size-3.5",
+  paths: `<path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2zM22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z"/>`,
+};
+export const OCTOCAT = {
+  className: "size-3.5",
+  paths: `<path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65S8.93 17.38 9 18v4"/><path d="M9 18c-4.51 2-5-2-7-2"/>`,
+};
+/** The toggle shows the theme it switches to. */
+export const MOON = {
+  className: "size-3.5 dark:hidden",
+  paths: `<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9"/>`,
+};
+export const SUN = {
+  className: "hidden size-3.5 dark:block",
+  paths: `<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>`,
+};
 export const ARROW = {
   className: "size-4 transition-transform group-hover/go:translate-x-0.5",
   paths: `<path d="M5 12h14M13 6l6 6-6 6"/>`,
 };
+
+/** The theme toggle as HTML, for the pages built without React. */
+export const toggle = () =>
+  `<button type="button" title="Toggle dark mode" aria-label="Toggle dark mode" data-theme-toggle class="${TOGGLE}">${svg(MOON, 2)}${svg(SUN, 2)}</button>`;
+
+/** An icon above as an `<svg>` string, for the pages built without React. */
+export const svg = (icon: { className: string; paths: string }, width: number) =>
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="${icon.className}">${icon.paths}</svg>`;

@@ -46,11 +46,12 @@ export function readme(file: string, repo: string): Plugin {
       if (id !== `\0${BODY}` && id !== `\0${LOGO}`) return;
       this.addWatchFile(file);
       await init();
-      const html = renderToHtml(readFileSync(file, "utf8"), {
+      let html = renderToHtml(readFileSync(file, "utf8"), {
         headingIds: true,
         highlighter: (code, { lang }) =>
           `<pre>${highlightText(code, { lang: lang || "plain", lineNumbers: false })}</pre>`,
       });
+      html = byScheme(html);
       // The logo is what the first heading holds; the body is what follows it.
       const open = html.indexOf(">", html.indexOf("<h1")) + 1;
       const close = html.indexOf("</h1>");
@@ -59,6 +60,24 @@ export function readme(file: string, repo: string): Plugin {
         : toModule(html.slice(close + "</h1>".length), file, repo);
     },
   };
+}
+
+/** A `<picture>` follows the system's scheme, not the site's toggle: one image per scheme
+ * instead, each hidden in the other. */
+function byScheme(html: string): string {
+  return html.replace(/<picture>([\s\S]*?)<\/picture>/g, (picture, inner: string) => {
+    const alt = /\balt="([^"]*)"/.exec(inner)?.[1] ?? "";
+    const sources = [
+      ...inner.matchAll(/<source media="\(prefers-color-scheme: (light|dark)\)" srcset="([^"]+)"/g),
+    ];
+    if (!sources.length) return picture;
+    return sources
+      .map(
+        ([, scheme, src]) =>
+          `<img src="${src}" alt="${alt}" class="${scheme === "dark" ? "hidden dark:block" : "dark:hidden"}">`,
+      )
+      .join("");
+  });
 }
 
 /** A module whose default export is `html`, with its local images imported. */

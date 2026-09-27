@@ -1,6 +1,7 @@
 // A package's Markdown, rendered by md4x's wasm build (its `browser` export).
 import { highlightText } from "rangi";
 import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
+import { schemeMedia } from "../theme.ts";
 import { Pulse, Waiting } from "./ui.tsx";
 
 type Renderer = (text: string, base: string) => string;
@@ -139,6 +140,14 @@ function renderer(
         return [resolve(url, true), ...rest].join(" ");
       });
       node.setAttribute("srcset", set.join(", "));
+    }
+    // A source for one scheme follows the site's toggle, not the system (src/theme.ts).
+    const scheme = /^\(prefers-color-scheme:\s*(light|dark)\)$/.exec(
+      node.getAttribute("media") ?? "",
+    )?.[1] as "light" | "dark" | undefined;
+    if (node.tagName === "SOURCE" && scheme) {
+      node.setAttribute("data-scheme", scheme);
+      node.setAttribute("media", schemeMedia(scheme));
     }
     if (node.tagName === "A" && !node.getAttribute("href")?.startsWith("#")) {
       node.setAttribute("target", "_blank");

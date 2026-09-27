@@ -2,17 +2,22 @@
 import type { View } from "../app.tsx";
 import {
   ARROW,
+  BOOK,
   BUTTON,
-  DOCS,
   FORM,
-  GITHUB,
   INPUT,
+  KEY,
+  LINK,
   LOGO,
   logo,
+  MOON,
+  OCTOCAT,
   PLACEHOLDER,
   REPO,
   SEARCH,
   SMALL,
+  SUN,
+  TOGGLE,
 } from "./hero.ts";
 import { repoUrl } from "./package.tsx";
 import { Icon, type IconName } from "./ui.tsx";
@@ -33,7 +38,7 @@ export function TopBar(props: {
   return (
     <header className="grid shrink-0 grid-cols-[1fr_minmax(0,24rem)_1fr] items-center gap-3 px-4 py-2 sm:gap-6 sm:px-8">
       <h1 className={`${LOGO} ${SMALL.logo}`}>
-        <a href="/" title="upm" dangerouslySetInnerHTML={{ __html: logo }} />
+        <a href="/" title="upm" data-key="u" dangerouslySetInnerHTML={{ __html: logo }} />
       </h1>
 
       <form
@@ -54,6 +59,7 @@ export function TopBar(props: {
             autoCapitalize="off"
             autoComplete="off"
             aria-label="Package spec"
+            data-key="k"
             className={`peer ${INPUT}`}
           />
           {props.version && (
@@ -89,13 +95,36 @@ export function TopBar(props: {
         </button>
       </form>
 
-      <nav className="flex items-center gap-3 justify-self-end text-xs">
-        <a href="/docs" className={DOCS}>
-          Docs
+      <nav className="flex items-center gap-2 justify-self-end text-xs">
+        <a href="/docs" title="Docs" data-key="d" className={LINK}>
+          <HeroIcon icon={BOOK} width={2} />
+          <span className="hidden sm:inline">
+            <span className={KEY}>D</span>ocs
+          </span>
         </a>
-        <a href={REPO} className={`${GITHUB} hidden sm:inline`}>
-          GitHub
+        <a
+          href={REPO}
+          target="_blank"
+          rel="noreferrer"
+          title="GitHub"
+          data-key="g"
+          className={LINK}
+        >
+          <HeroIcon icon={OCTOCAT} width={2} />
+          <span className="hidden sm:inline">
+            <span className={KEY}>G</span>itHub
+          </span>
         </a>
+        <button
+          type="button"
+          title="Toggle dark mode"
+          aria-label="Toggle dark mode"
+          data-theme-toggle
+          className={TOGGLE}
+        >
+          <HeroIcon icon={MOON} width={2} />
+          <HeroIcon icon={SUN} width={2} />
+        </button>
       </nav>
     </header>
   );

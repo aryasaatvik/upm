@@ -1,5 +1,6 @@
 import { DOCS, NPM, pathOf } from "./lib/route.ts";
 import { route } from "./router.ts";
+import "./theme.ts";
 
 const { pathname, search, hash } = location;
 // Links from before the `/npm/` route.

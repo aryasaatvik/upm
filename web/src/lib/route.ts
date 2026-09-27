@@ -14,7 +14,7 @@ export function pathOf(spec: string): string {
   return NPM + encodeURIComponent(spec).replace(/%40/g, "@").replace(/%2F/gi, "/");
 }
 
-/** Specs worth a try, offered on both pages: build and UI, then full-stack frameworks, then servers. */
+/** Specs worth a try, offered on both pages: build and UI, then full-stack frameworks, then servers, then upm itself. */
 export const EXAMPLES = [
   "vite",
   "vue",
@@ -24,4 +24,5 @@ export const EXAMPLES = [
   "nitro",
   "h3",
   "express",
+  "upm",
 ];

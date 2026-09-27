@@ -1,5 +1,17 @@
 @import "tailwindcss";
 
+/* Dark follows the system, unless the toggle picked a theme (src/theme.ts). */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme]), :root:not([data-theme]) *) {
+      @slot;
+    }
+  }
+}
+
 @theme {
   --font-sans: ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
@@ -28,6 +40,12 @@ html {
   --editor-bg: light-dark(#ffffff, #18181b);
   --chrome-bg: light-dark(#fafafa, #0f0f11);
   background: var(--chrome-bg);
+}
+html[data-theme="light"] {
+  color-scheme: light;
+}
+html[data-theme="dark"] {
+  color-scheme: dark;
 }
 
 /* Quiet scrollbars: a thin thumb, no track. Chrome and Firefox read the first rule, Safari the rest. */
@@ -168,7 +186,7 @@ html {
   }
 }
 
-/* The landing's hero moving into the app's top bar (see src/landing.ts). */
+/* The landing's hero moving into the app's top bar or the docs' bar (see src/router.ts). */
 ::view-transition-group(*) {
   animation-duration: 0.35s;
   animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
@@ -179,8 +197,8 @@ html {
 ::view-transition-new(logo) {
   animation: none;
 }
-html[data-to="play"]::view-transition-new(logo),
-html[data-to="landing"]::view-transition-old(logo) {
+html[data-to="small"]::view-transition-new(logo),
+html[data-to="large"]::view-transition-old(logo) {
   opacity: 0;
 }
 @media (prefers-reduced-motion: reduce) {

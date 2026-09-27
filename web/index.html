@@ -10,8 +10,25 @@
     />
     <link rel="canonical" href="https://upm.sh/" />
     <link rel="alternate" type="text/markdown" href="/README.md" title="upm docs" />
-    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fafafa" />
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0f0f11" />
+    <meta
+      name="theme-color"
+      media="(prefers-color-scheme: light)"
+      data-scheme="light"
+      content="#fafafa"
+    />
+    <meta
+      name="theme-color"
+      media="(prefers-color-scheme: dark)"
+      data-scheme="dark"
+      content="#0f0f11"
+    />
+    <script>
+      // The theme picked with the toggle (src/theme.ts), set before the page paints.
+      try {
+        const theme = localStorage.getItem("theme");
+        if (theme) document.documentElement.dataset.theme = theme;
+      } catch {}
+    </script>
 
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
@@ -61,6 +78,7 @@
           <div class="absolute top-3 right-4 flex items-center gap-3 sm:right-8">
             <div class="h-6.5 w-13 rounded-md bg-zinc-200/80 dark:bg-zinc-800"></div>
             <div class="h-4 w-11 rounded bg-zinc-200/80 dark:bg-zinc-800"></div>
+            <div class="size-6.5 rounded-md bg-zinc-200/80 dark:bg-zinc-800"></div>
           </div>
           <div class="min-h-20 flex-1"></div>
           <div
