@@ -19,11 +19,12 @@ function command(text: string, dim = "", bare = false, prompt = "$") {
   const copy = dim ? `${text} ${dim}` : text;
   const frame = bare
     ? "gap-3"
-    : "gap-2 rounded-xl border border-zinc-200 bg-(--chrome-bg) py-1.5 pr-1.5 pl-3 text-sm transition-colors hover:border-amber-500 dark:border-zinc-800 dark:hover:border-amber-500";
+    : "gap-2 rounded-xl border border-zinc-200 bg-(--chrome-bg) py-1.5 pr-1.5 pl-3 text-sm transition-colors hover:border-amber-500 data-copied:border-emerald-500! dark:border-zinc-800 dark:hover:border-amber-500";
   return `<button type="button" title="Copy to clipboard" data-copy="${escape(copy)}" class="group/copy flex w-full cursor-pointer items-center text-left font-mono ${frame}">
   <span class="text-amber-500 select-none">${prompt}</span>
   <code class="min-w-0 flex-1 truncate text-zinc-800 dark:text-zinc-200">${escape(text)}${dim && ` <span class="text-zinc-400 dark:text-zinc-500">${escape(dim)}</span>`}</code>
-  <span data-icon class="shrink-0 ${bare ? "-my-1 rounded-md p-1.5" : "rounded-lg p-2"} bg-amber-500 text-zinc-950 transition-colors group-hover/copy:bg-amber-400">${svg(COPY, 2)}</span>
+  <span class="hidden shrink-0 font-sans text-xs font-medium text-emerald-600 group-data-copied/copy:inline dark:text-emerald-400">Copied!</span>
+  <span data-icon class="shrink-0 ${bare ? "-my-1 rounded-md p-1.5" : "rounded-lg p-2"} bg-amber-500 text-zinc-950 transition-colors group-hover/copy:bg-amber-400 group-data-copied/copy:bg-emerald-500!">${svg(COPY, 2)}</span>
 </button>`;
 }
 
@@ -55,10 +56,6 @@ const NPMRC = `<code class="rounded bg-zinc-100 px-1 py-0.5 font-mono text-xs te
 const KB = `<strong class="font-semibold text-amber-600 dark:text-amber-400">~250 KB</strong>`;
 const NOTE = `<p class="text-sm text-zinc-500">Works with ${NODE} Node.js, your existing ${NPMRC} and npm, pnpm or bun lockfiles. Takes ${KB} of disk space.</p>`;
 
-/** A shell comment; wrapped lines stay clear of the `#`. */
-const comment = (html: string) =>
-  `<p class="flex gap-3 text-zinc-400 dark:text-zinc-500"><span class="select-none">#</span><span>${html}</span></p>`;
-
 /**
  * The card: "Install upm" over a terminal. With `spec`, it has no title or frame, and a second command
  * adds that package with upm.
@@ -75,7 +72,7 @@ export function installCard(className = "", spec?: string) {
   <h2 class="mb-3 text-center text-sm font-semibold text-zinc-900 dark:text-zinc-100">Install upm</h2>
   <div class="space-y-1 rounded-2xl border border-zinc-200 bg-(--editor-bg) p-5 font-mono text-sm shadow-2xl shadow-amber-500/10 dark:border-zinc-800">
   ${installer(true)}
-  ${comment(`Works with Node.js, your .npmrc and npm, pnpm or bun lockfiles. Takes ${KB} of disk space.`)}
+  <p class="pt-2 text-xs text-zinc-400 dark:text-zinc-500">Works with Node.js, your .npmrc and npm, pnpm or bun lockfiles. Takes ${KB} of disk space.</p>
   </div>
 </aside>`;
 }
@@ -100,10 +97,14 @@ export function bindInstall(card: HTMLElement): () => void {
     const icon = button.querySelector<HTMLElement>("[data-icon]")!;
     void navigator.clipboard.writeText(button.dataset.copy!);
     icon.innerHTML = svg(CHECK, 2.5);
+    button.dataset.copied = "";
     clearTimeout(timers.get(button));
     timers.set(
       button,
-      setTimeout(() => (icon.innerHTML = svg(COPY, 2)), 1500),
+      setTimeout(() => {
+        icon.innerHTML = svg(COPY, 2);
+        delete button.dataset.copied;
+      }, 1500),
     );
   };
   card.addEventListener("click", onClick);

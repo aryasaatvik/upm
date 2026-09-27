@@ -23,6 +23,8 @@ import { bindInstall, installCard } from "./components/install.ts";
 import { EXAMPLES, pathOf } from "./lib/route.ts";
 import { navigate } from "./router.ts";
 
+// Vercel's triangle, in the text color.
+const VERCEL = `<svg viewBox="0 0 76 65" fill="currentColor" aria-hidden="true" class="size-2.5"><path d="M37.53 0 75.05 65H0Z"/></svg>`;
 // Short names for long example specs.
 const LABELS: Record<string, string> = { "@tanstack/react-start": "tanstack" };
 const PILL =
@@ -72,6 +74,7 @@ export function mount(root: HTMLElement) {
   <div class="flex flex-1 flex-col items-center justify-center py-10">
     ${installCard("w-full max-w-lg")}
   </div>
+  <a href="https://vercel.com/?utm_source=upm&utm_campaign=oss" target="_blank" rel="noreferrer" class="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5 text-[10px] font-medium text-zinc-500 transition-colors hover:text-zinc-900 dark:hover:text-zinc-100">${VERCEL} Sponsored by Vercel</a>
 </main>`;
   const form = root.querySelector("form")!;
   form.addEventListener("submit", (e) => {
