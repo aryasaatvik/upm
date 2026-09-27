@@ -95,6 +95,13 @@ before that, bytes may exist only in a private temp file (`files/<pid>-*.tmp`, m
 0600, no blob name), removed when the tarball fails and swept by `prune` once its
 process is dead and the grace period is over.
 
+A store backend (`src/store-backend.ts`) is the one exception, and it is trusted as the store
+is: without the tarball nothing can check a package's file list against its integrity, so
+whoever can write to the backend decides what a package holds. A blob is still checked against
+its hash, unless the backend says it is `trusted`, and an index from it passes the tar
+reader's path rules before anything is written. It is asked only on a miss, never on the
+warm path, and a failure or silence from it is a miss, reported once through `log`.
+
 Publish complete package entries, not partially built directories. This is not a
 transaction over the whole install. On failure, state must not certify an incomplete
 tree, and retry must remain possible. Do not clean up a worker's destination while

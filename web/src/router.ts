@@ -1,4 +1,4 @@
-// Moves between the landing and the playground in place. Both open with the hero, so a view
+// Moves between the landing and the app in place. Both open with the hero, so a view
 // transition morphs one into the other, both ways. The docs load as a page of their own.
 import { DOCS, NPM } from "./lib/route.ts";
 
@@ -34,7 +34,7 @@ export async function route(morph = false) {
   if (!morph || !document.startViewTransition) return show();
   // Which way the hero goes, for src/style.css.
   document.documentElement.dataset.to = path.startsWith(NPM) ? "play" : "landing";
-  // The playground's run starts once the animation ends; its work on this thread would drop frames.
+  // The app's run starts once the animation ends; its work on this thread would drop frames.
   const transition = document.startViewTransition(() => show(transition.finished.catch(() => {})));
 }
 
@@ -49,7 +49,7 @@ addEventListener("popstate", () => {
   if (location.pathname !== shown) void route(true);
 });
 
-// Links between the landing and the playground stay in the page.
+// Links between the landing and the app stay in the page.
 root.addEventListener("click", (e) => {
   const link = (e.target as Element).closest("a");
   // A click that asks for a new tab or window keeps the link's own way.

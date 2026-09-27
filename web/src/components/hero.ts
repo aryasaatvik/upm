@@ -1,6 +1,6 @@
 // The hero both pages open with: the README's logo and the spec box. Both pages build it from
 // these classes: large and centered on the landing, small in one row at the top of the
-// playground. Their view-transition names let the logo and the box morph from one to the other.
+// app. Their view-transition names let the logo and the box morph from one to the other.
 export { default as logo } from "virtual:readme/logo";
 
 /** The top-right links: the docs as a button, then GitHub. */

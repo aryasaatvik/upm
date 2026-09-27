@@ -244,6 +244,37 @@ the registry client, dependency resolver, and in-memory lockfile tools without
 requiring Node. It does not install files or read `.npmrc` for you. See
 [`src/resolver.ts`](src/resolver.ts) for its exports.
 
+### Store backend
+
+`storeBackend` puts shared storage behind the store: a team cache, a key-value database, the
+browser's OPFS. upm asks it for a package before downloading one, and hands it each package it
+downloads before the command returns. The store is still a real directory that projects link
+from.
+
+A backend holds bytes by key; upm decides the keys and what they hold:
+
+```js
+import { install } from "upm";
+
+const data = new Map();
+
+await install({
+  storeBackend: {
+    get: async (key) => data.get(key),
+    set: async (key, value) => void data.set(key, value),
+  },
+});
+```
+
+Keys are `/`-separated and safe as file names, and a key's value never changes. An optional
+`getMany(keys)` reads several in one call. Without `set`, the backend is only read. Packages
+downloaded with credentials are not handed to it unless it says it is `private`.
+
+A backend must be trusted as the store is: it decides what a package holds. Its files are
+checked against their hashes unless it says it is `trusted`, and its paths must stay inside the
+package. A failure or a call quiet for 30 s counts as a miss, and upm downloads instead. See
+`StoreBackend` in [`src/store-backend.ts`](src/store-backend.ts).
+
 ## Lockfiles and CI
 
 ```sh
@@ -626,7 +657,8 @@ This checks file sizes, package links, and command-line tool links, and repairs
 problems it detects. It also warns about unmet peer dependency ranges. It does
 **not** check every file's hash, so damage that leaves the file size unchanged can
 go unnoticed. Peer conflicts are reported, not fixed. Downloaded tarballs are
-checked against their integrity before being stored.
+checked against their integrity before being stored; content from a `storeBackend` is
+checked against its file hashes only, and not at all when the backend is `trusted`.
 
 To clean up:
 

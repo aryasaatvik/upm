@@ -1,4 +1,4 @@
-// Routes: `/` is the landing, `/docs` the README, `/npm/<spec>` the playground for a spec.
+// Routes: `/` is the landing, `/docs` the README, `/npm/<spec>` the app for a spec.
 // Any other `/<spec>` redirects to `/npm/<spec>`.
 
 export const NPM = "/npm/";

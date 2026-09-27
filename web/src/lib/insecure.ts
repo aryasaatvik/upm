@@ -1,6 +1,6 @@
 // Off https and localhost the browser hides `crypto.subtle` and `crypto.randomUUID`: both are
 // for secure contexts only. upm hashes tarballs and files with the first and names temp files
-// with the second, so a playground opened on a LAN address would fail. Here both are filled in
+// with the second, so the app opened on a LAN address would fail. Here both are filled in
 // JavaScript: slower, but the same bytes, so the integrity check still runs.
 
 /** Fill what is missing. Returns a warning to show when it did, else undefined. */
@@ -12,7 +12,7 @@ export function fillCrypto(): string | undefined {
   }
   return (
     `${location.origin} is not a secure context, so WebCrypto is missing: hashing in JavaScript, ` +
-    `which is slower. Open the playground on https or localhost for the native one.`
+    `which is slower. Open the app on https or localhost for the native one.`
   );
 }
 

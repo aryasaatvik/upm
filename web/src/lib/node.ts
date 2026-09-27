@@ -4,7 +4,7 @@
 // (src/runtime.ts asks for each by name).
 //
 // The filesystem lives in memory, since upm's sync calls cannot wait for OPFS on this thread.
-// `persist()` loads what OPFS kept and saves each change back once writes go quiet.
+// What outlives the tab is the store's content, kept by ./opfs.ts as upm's store backend.
 
 import type { Boot } from "./thread.ts";
 
@@ -43,18 +43,13 @@ export interface ShimOptions {
 const UMASK = 0o022;
 let inodes = 0;
 let clock = 0;
-let root = dir(0o755);
+const root = dir(0o755);
 
-/** A fresh, empty filesystem, on OPFS too. Anything still writing to the old one writes into nothing. */
-export function reset(): void {
-  root = dir(0o755);
-  changed();
-}
+/** Bytes written or hardlinked under each directory named here, as they land. */
+export const written: Record<string, number> = {};
 
-function changed(): void {
-  if (!disk) return;
-  clearTimeout(timer);
-  timer = setTimeout(() => void flush(), QUIET_MS);
+function count(p: string, bytes: number): void {
+  for (const at in written) if (p.startsWith(at)) written[at]! += bytes;
 }
 
 /** Every entry under `at`, depth first, links not followed. */
@@ -305,13 +300,11 @@ function existing(p: string, follow: boolean, syscall: string): Found & { node: 
 function add(parent: Dir, name: string, node: Entry): void {
   parent.entries.set(name, node);
   parent.mtime = parent.ctime = now();
-  changed();
 }
 
 function remove(parent: Dir, name: string): void {
   parent.entries.delete(name);
   parent.mtime = parent.ctime = now();
-  changed();
 }
 
 /** The fields upm reads: its install state stamps a file by size, times and inode. */
@@ -342,7 +335,9 @@ type Encoding = string | { encoding?: string | null } | undefined;
 
 function decode(data: Uint8Array, options: Encoding): string | Uint8Array {
   const encoding = typeof options === "string" ? options : options?.encoding;
-  if (!encoding) return data.slice();
+  // Shared, not copied: a file's data is replaced, never changed in place, and upm never
+  // writes into what it reads. A copy per read was a second store's worth of bytes on `nuxt`.
+  if (!encoding) return data;
   if (encoding === "latin1") return Array.from(data, (byte) => String.fromCharCode(byte)).join("");
   return new TextDecoder().decode(data);
 }
@@ -425,10 +420,10 @@ const sync = {
       if (found.node.kind === "dir") throw fail("EISDIR", "open", p);
       if (!(found.node.mode & 0o200)) throw fail("EACCES", "open", p);
       Object.assign(found.node, { data: bytes, mtime: now(), ctime: now() });
-      changed();
     } else {
       add(found.parent, found.name, { kind: "file", data: bytes, ...meta(mode & ~UMASK) });
     }
+    count(p, bytes.length);
   },
   renameSync(from: string, to: string): void {
     const a = existing(from, false, "rename");
@@ -483,12 +478,12 @@ const sync = {
     if (found.node) throw fail("EEXIST", "link", to);
     node.ctime = now();
     add(found.parent, found.name, node);
+    if (node.kind === "file") count(to, node.data.length);
   },
   utimesSync(p: string, _atime: Date | number, mtime: Date | number): void {
     const { node } = existing(p, true, "utime");
     node.mtime = time(mtime);
     node.ctime = now();
-    changed();
   },
 };
 
@@ -504,207 +499,3 @@ const fsp = Object.fromEntries(
 );
 
 export const fs = { ...sync, promises: fsp };
-
-// --- OPFS: where the filesystem outlives the tab ---
-
-/**
- * `upm/meta.json` lists every entry, depth first, and `upm/blobs/<ino>` holds each file's bytes:
- * one blob per inode, so hardlinks share it.
- */
-type Row = [
-  path: string,
-  kind: "f" | "d" | "l",
-  ino: number,
-  mode: number,
-  mtime: number,
-  ctime: number,
-  target?: string,
-];
-
-/** How long writes must pause before a save: an install saves once it is done, not per file. */
-const QUIET_MS = 300;
-/** How long to wait for another tab to let go of OPFS. */
-const CLAIM_MS = 2000;
-/** OPFS calls in flight at once. */
-const LANES = 32;
-
-let disk: { home: FileSystemDirectoryHandle; blobs: FileSystemDirectoryHandle } | undefined;
-let timer: ReturnType<typeof setTimeout> | undefined;
-let saving = Promise.resolve();
-let persisting: Promise<boolean> | undefined;
-/** Ino -> the bytes its blob holds. A file's data is replaced, never changed in place. */
-const saved = new Map<number, Uint8Array>();
-
-/**
- * Load what OPFS kept from the last visit into memory, and save every change back from now on.
- * Stays in memory only where there is no OPFS or another tab already keeps it: then false.
- */
-export function persist(): Promise<boolean> {
-  return (persisting ??= load().then(
-    () => disk !== undefined,
-    () => {
-      disk = undefined;
-      return false;
-    },
-  ));
-}
-
-/**
- * Reads files as the last visit left them, without loading all of OPFS as `persist()` does: a
- * store that every earlier install filled is thousands of blobs. Memory first, which holds what
- * this tab wrote and, once `persist()` is done, everything. Undefined for a file neither has.
- */
-export async function reader(): Promise<(paths: string[]) => Promise<(Uint8Array | undefined)[]>> {
-  const inMemory = (p: string) => {
-    try {
-      const { node } = find(p, true, "open");
-      return node?.kind === "file" ? node.data : undefined;
-    } catch {
-      return undefined;
-    }
-  };
-  let blobs: FileSystemDirectoryHandle | undefined;
-  const inos = new Map<string, number>();
-  if (!disk) {
-    try {
-      const home = await (await navigator.storage.getDirectory()).getDirectoryHandle("upm");
-      const rows = JSON.parse(
-        await (await (await home.getFileHandle("meta.json")).getFile()).text(),
-      ) as Row[];
-      for (const [path, kind, ino] of rows) if (kind === "f") inos.set(path, ino);
-      blobs = await home.getDirectoryHandle("blobs");
-    } catch {}
-  }
-  return async (paths) => {
-    const found = paths.map(inMemory);
-    const missing = paths.flatMap((p, i) => (found[i] || !inos.has(p) ? [] : [i]));
-    await each(missing, async (i) => {
-      try {
-        const file = await (await blobs!.getFileHandle(String(inos.get(paths[i]!)))).getFile();
-        found[i] = new Uint8Array(await file.arrayBuffer());
-      } catch {}
-    });
-    return found;
-  };
-}
-
-/** Save now instead of once writes go quiet. */
-export function flush(): Promise<void> {
-  clearTimeout(timer);
-  // A failed save (a full disk, say) leaves `saved` as it was: the next one tries again.
-  return (saving = saving.then(save).catch(() => {}));
-}
-
-async function load(): Promise<void> {
-  if (
-    typeof FileSystemFileHandle === "undefined" ||
-    !("createWritable" in FileSystemFileHandle.prototype)
-  )
-    return;
-  if (!(await claim())) return;
-  const home = await (
-    await navigator.storage.getDirectory()
-  ).getDirectoryHandle("upm", { create: true });
-  const blobs = await home.getDirectoryHandle("blobs", { create: true });
-  let rows: Row[] = [];
-  try {
-    const file = await (await home.getFileHandle("meta.json")).getFile();
-    rows = JSON.parse(await file.text()) as Row[];
-  } catch {}
-  const wanted = new Set(rows.filter((row) => row[1] === "f").map((row) => row[2]));
-  const names: string[] = [];
-  for await (const name of blobs.keys()) names.push(name);
-  const data = new Map<number, Uint8Array>();
-  await each(names, async (name) => {
-    const ino = Number(name);
-    if (!wanted.has(ino)) return blobs.removeEntry(name);
-    const file = await (await blobs.getFileHandle(name)).getFile();
-    data.set(ino, new Uint8Array(await file.arrayBuffer()));
-  });
-  const next = dir(0o755);
-  const dirs = new Map<string, Dir>([["/", next]]);
-  const nodes = new Map<number, Entry>();
-  for (const [path, kind, ino, mode, mtime, ctime, target = ""] of rows) {
-    const parent = dirs.get(dirname(path));
-    if (!parent || (kind === "f" && !data.has(ino))) continue;
-    let node = nodes.get(ino);
-    if (!node) {
-      const meta = { ino, mode, mtime, ctime };
-      node =
-        kind === "d"
-          ? { kind: "dir", entries: new Map(), ...meta }
-          : kind === "l"
-            ? { kind: "link", target, ...meta }
-            : { kind: "file", data: data.get(ino)!, ...meta };
-      nodes.set(ino, node);
-      inodes = Math.max(inodes, ino);
-      clock = Math.max(clock, mtime, ctime);
-    }
-    if (node.kind === "dir") dirs.set(path, node);
-    else if (node.kind === "file") saved.set(ino, node.data);
-    parent.entries.set(basename(path), node);
-  }
-  root = next;
-  disk = { home, blobs };
-}
-
-/** Blobs first, then the listing, then blobs nothing lists: a save cut short loses no entry. */
-async function save(): Promise<void> {
-  if (!disk) return;
-  const { home, blobs } = disk;
-  const rows: Row[] = [];
-  const live = new Map<number, Uint8Array>();
-  for (const [path, entry] of walk()) {
-    const { ino, mode, mtime, ctime } = entry;
-    const kind = entry.kind === "file" ? "f" : entry.kind === "dir" ? "d" : "l";
-    rows.push(
-      entry.kind === "link"
-        ? [path, kind, ino, mode, mtime, ctime, entry.target]
-        : [path, kind, ino, mode, mtime, ctime],
-    );
-    if (entry.kind === "file") live.set(ino, entry.data);
-  }
-  const fresh = [...live].filter(([ino, data]) => saved.get(ino) !== data);
-  await each(fresh, async ([ino, data]) => {
-    await write(await blobs.getFileHandle(String(ino), { create: true }), data);
-    saved.set(ino, data);
-  });
-  await write(await home.getFileHandle("meta.json", { create: true }), JSON.stringify(rows));
-  const dead = [...saved.keys()].filter((ino) => !live.has(ino));
-  await each(dead, async (ino) => {
-    saved.delete(ino);
-    await blobs.removeEntry(String(ino)).catch(() => {});
-  });
-}
-
-async function write(handle: FileSystemFileHandle, data: string | Uint8Array): Promise<void> {
-  const stream = await handle.createWritable();
-  await stream.write(data as FileSystemWriteChunkType);
-  await stream.close();
-}
-
-/**
- * One tab keeps OPFS: two saving the same listing would drop each other's entries. Waits a
- * little, since on a reload the page before may not have let go yet.
- */
-function claim(): Promise<boolean> {
-  const locks = globalThis.navigator?.locks;
-  if (!locks) return Promise.resolve(true);
-  return new Promise((granted) => {
-    locks
-      .request("upm-fs", { signal: AbortSignal.timeout(CLAIM_MS) }, () => {
-        granted(true);
-        // Held for as long as the tab is open.
-        return new Promise<void>(() => {});
-      })
-      .catch(() => granted(false));
-  });
-}
-
-async function each<T>(items: T[], run: (item: T) => Promise<void>): Promise<void> {
-  let next = 0;
-  const lane = async () => {
-    while (next < items.length) await run(items[next++]!);
-  };
-  await Promise.all(Array.from({ length: LANES }, lane));
-}

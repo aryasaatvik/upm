@@ -250,10 +250,12 @@ writes. "Newest" means most recently modified, not last by name.
   upm and, when recorded, its packed size and estimated CI restore.
 - **Every chart has one canvas size** (`WIDTH` × `HEIGHT` in `chart.ts`), so they line up
   in a README grid. Rows stretch to fill spare height; only a chart too tall for it grows.
-- The SVG has its own light background and no scripts, fonts or external files, so it works
-  on GitHub in either theme. Open it directly to see exact values in marker tooltips.
+- **The chart follows the viewer's color scheme**: colors are drawn light, and a
+  `prefers-color-scheme: dark` style swaps each for its pair in `DARK` in `chart.ts`. Add
+  any new color there. The SVG has no scripts, fonts or external files. Open it directly to
+  see exact values in marker tooltips.
 
-For a PNG: `rsvg-convert --zoom 2 results/<stamp>.cold.svg -o cold.png`. After a layout
+For a PNG (light): `rsvg-convert --zoom 2 results/<stamp>.cold.svg -o cold.png`. After a layout
 change, regenerate a chart and look at it at its embedded size.
 
 ## A/B of upm builds: `ab.sh`

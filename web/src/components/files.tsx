@@ -1,8 +1,9 @@
 // The Explorer view: the project in the shape upm's install leaves it, from the first moment.
 // package.json, the package's files where its link shows them, the lockfile; then everything
 // the install adds around them, in place.
-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { View } from "../app.tsx";
+import type { Size } from "../lib/client.ts";
 import { formatBytes } from "./code.tsx";
 import type { InstalledFile } from "../lib/install.ts";
 import { pathOf } from "../lib/route.ts";
@@ -17,15 +18,20 @@ export function treePath(name: string, path = "") {
 
 /**
  * The project's files, each package's once: an opened link shows the `.store` copy it points
- * to. And the store's apart, which holds every install's content, not only this one's.
+ * to. Symlinks count apart, with no bytes. And the store's apart, which holds every install's
+ * content, not only this one's.
  */
 function tally(files: Map<string, InstalledFile>, links: Map<string, string> | undefined) {
-  const project = { files: 0, bytes: 0 };
-  const store = { files: 0, bytes: 0 };
+  const project = { files: 0, links: 0, bytes: 0 };
+  const store = { files: 0, links: 0, bytes: 0 };
   const opened = [...(links?.keys() ?? [])].map((at) => `${at}/`);
   for (const [path, file] of files) {
     const into = path.startsWith("~/") ? store : project;
     if (into === project && opened.some((at) => path.startsWith(at))) continue;
+    if (file.link !== undefined) {
+      into.links++;
+      continue;
+    }
     into.files++;
     into.bytes += file.size;
   }
@@ -38,6 +44,10 @@ export function Explorer(props: {
   files: Map<string, InstalledFile> | undefined;
   /** The installed tree's opened links: tree path -> target. */
   links: Map<string, string> | undefined;
+  /** What the install will write, as the registry tells it: shown until the install lands. */
+  estimate?: Size;
+  /** How far the install has got, 0 to 1, or pending while that cannot be measured yet. */
+  progress?: number | "pending";
   picked: number;
   selected: string;
   /** A path to open the way to, scroll to and focus. */
@@ -50,6 +60,7 @@ export function Explorer(props: {
   const lock = resolved && !(resolved instanceof Error) ? resolved.lockfile : undefined;
   const hasTree = files !== undefined || lock !== undefined;
   const count = files && tally(files, props.links);
+  const estimated = !!count && !!props.estimate && props.estimate.files > count.project.files;
 
   return (
     <>
@@ -59,24 +70,43 @@ export function Explorer(props: {
           <span
             className="truncate"
             title={
-              count?.store.files
-                ? `upm's store holds ${count.store.files} files, ${formatBytes(count.store.bytes)}, from every install in this browser`
-                : undefined
+              estimated
+                ? "An estimate from the registry's counts, until the install lands"
+                : count?.store.files
+                  ? `upm's store holds ${count.store.files} files, ${formatBytes(count.store.bytes)}, from the installs in this tab`
+                  : undefined
             }
           >
-            {count && `${count.project.files} files · ${formatBytes(count.project.bytes)}`}
+            {count && (
+              // Fresh per run: it counts up from this run's first files, not the last run's.
+              <Count
+                key={view.id}
+                {...(estimated ? { ...props.estimate!, links: 0 } : count.project)}
+                estimated={estimated}
+              />
+            )}
           </span>
         </span>
         {view.dependencies && (
           <IconButton
-            icon="download"
-            title="Load again: resolve and install afresh"
+            icon="reload"
+            title="Reinstall: resolve and install afresh"
             href={pathOf(view.spec.trim())}
-          >
-            reinstall
-          </IconButton>
+          />
         )}
       </PaneTitle>
+      {props.progress !== undefined && (
+        <div className="h-0.5 shrink-0 overflow-hidden bg-zinc-200 dark:bg-zinc-800">
+          {props.progress === "pending" ? (
+            <div className="h-full w-1/3 animate-pending bg-amber-500 motion-reduce:w-full motion-reduce:animate-pulse" />
+          ) : (
+            <div
+              className="h-full bg-amber-500 transition-[width] duration-300 ease-out"
+              style={{ width: `${props.progress * 100}%` }}
+            />
+          )}
+        </div>
+      )}
       {tarball instanceof Error && view.top && !(view.top instanceof Error) && (
         <div className="shrink-0 px-3 pb-2">
           <ErrorBox error={tarball} title="Tarball failed" />
@@ -114,6 +144,37 @@ export function Explorer(props: {
       {!hasTree && <div className="flex-1" />}
     </>
   );
+}
+
+function Count(props: { files: number; links: number; bytes: number; estimated: boolean }) {
+  const files = Math.round(useCountUp(props.files));
+  const bytes = useCountUp(props.bytes);
+  const links = props.links ? ` (${props.links} links)` : "";
+  return `${props.estimated ? "~" : ""}${files} files${links} · ${formatBytes(bytes)}`;
+}
+
+/** `target`, reached in a short ease from where the last one left it. */
+function useCountUp(target: number): number {
+  const [shown, setShown] = useState(target);
+  const at = useRef(target);
+  useEffect(() => {
+    const from = at.current;
+    if (from === target) return;
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      at.current = target;
+      setShown(target);
+      return;
+    }
+    const start = performance.now();
+    let frame = requestAnimationFrame(function step(now) {
+      const t = Math.min(1, (now - start) / 600);
+      at.current = from + (target - from) * (1 - (1 - t) ** 3);
+      setShown(at.current);
+      if (t < 1) frame = requestAnimationFrame(step);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [target]);
+  return shown;
 }
 
 /** A row for a tree entry that has not landed yet. */

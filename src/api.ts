@@ -63,6 +63,7 @@ import type { InstallState, Inputs, Stamp } from "./state.ts";
 import { cacheLookups } from "./dns.ts";
 import { createStore, storeDir } from "./store.ts";
 import type { Store, Tarball } from "./store.ts";
+import type { StoreBackend } from "./store-backend.ts";
 import type { Manifest } from "./types.ts";
 import { describe, replaceFile, take, trace, tracing } from "./util.ts";
 
@@ -155,6 +156,8 @@ export interface RegistryAccess {
 export interface StoreAccess {
   /** Content-addressed store directory. Default: `UPM_STORE`, then `~/.upm/store`. */
   store?: string;
+  /** Shared storage behind the store. */
+  storeBackend?: StoreBackend;
 }
 
 /** Tuning that may change or go away in any release. */
@@ -583,7 +586,7 @@ async function installTree(ctx: Context, edit?: Edit, loaded?: Project): Promise
           log(`skipped optional ${pkg.name}@${pkg.version}: ${describe(error)}`, "warn");
         }
       }),
-    );
+    ).finally(into.flush);
     // Its threads are done; gone now, they are not the exit's to tear down. Each pool goes
     // when its phase ends — the registry's at the lock, this one here, the link pool's once
     // the entries are built — and the bin exits once the output is out, so a cold exit tears
@@ -637,6 +640,7 @@ async function installTree(ctx: Context, edit?: Edit, loaded?: Project): Promise
     return await linkTree(resolution, { ...link, store: again, awaiting: undefined });
   });
   await filling;
+  await store.flush();
   trace("linked");
   const { entries, linked: links, copied, reused, repaired, pooled, bins, removed } = linked;
   return {
@@ -1341,6 +1345,7 @@ export async function lock(options: LockOptions = {}): Promise<Lockfile> {
   }).finally(() => {
     registry.close();
     store.close();
+    return store.flush();
   });
   const lock = toLockfile(resolution, registry.baseFor);
   for (const warning of resolution.warnings) ctx.log(warning, "warn");
@@ -1380,7 +1385,7 @@ export async function fetchLockfile(options: FetchLockfileOptions = {}): Promise
         return undefined;
       }
     }),
-  );
+  ).finally(store.flush);
   return results.filter((result) => result !== undefined);
 }
 
@@ -1401,7 +1406,7 @@ export async function fetchPackages(
     picked.map(async (manifest) =>
       fetched(manifest, await store.add(manifest.dist.tarball, integrityOf(manifest))),
     ),
-  );
+  ).finally(store.flush);
 }
 
 function fetched(
@@ -1553,8 +1558,10 @@ function settings(ctx: Context): Config {
 /** The store, downloading with the config's credentials, or never under `offline`. */
 function openStore(ctx: Context, verify?: boolean): Store {
   const { auth, offline } = settings(ctx);
-  const dir = ctx.options.store;
-  return createStore({ dir, verify, auth, offline, noThreads: ctx.noThreads });
+  const { store: dir, storeBackend: backend } = ctx.options;
+  const backendFailed = (error: unknown) => ctx.log(`store backend: ${describe(error)}`, "warn");
+  const { noThreads } = ctx;
+  return createStore({ dir, verify, auth, offline, backend, backendFailed, noThreads });
 }
 
 /** Where each name's tarball is, for a lockfile that does not say. */

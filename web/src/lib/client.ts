@@ -1,4 +1,4 @@
-// What the playground asks of upm: all of it runs in the browser, from `../src`.
+// What the app asks of upm: all of it runs in the browser, from `../src`.
 import {
   createRegistry,
   formatLockfile,
@@ -13,6 +13,7 @@ import {
 import { createVerifier } from "upm/src/integrity.ts";
 import { extractTar, type TarEntry } from "upm/src/tar.ts";
 import { storedFiles } from "./install.ts";
+import { cachedFetch } from "./opfs.ts";
 
 export const DEFAULT_REGISTRY = "https://registry.npmjs.org";
 
@@ -71,13 +72,19 @@ export interface Tarball {
   ms: number;
 }
 
+/** What the registry says a version unpacks to. Older publishes do not say. */
+export interface Size {
+  files: number;
+  bytes: number;
+}
+
 export interface Client {
   registry: Registry;
   requests: RequestEntry[];
   /** `after`: when to start; the parts stay pending until then. */
   run(
     spec: string,
-    onPick: (pkg: ResolvedPackage, from: string) => void,
+    onPick: (pkg: ResolvedPackage, from: string, size?: Size) => void,
     after?: Promise<unknown>,
   ): Run;
 }
@@ -140,7 +147,19 @@ export function createClient(registryUrl: string, onChange: () => void): Client 
     });
   };
 
-  const registry = createRegistry({ registry: registryUrl, fetch: logged });
+  // Documents the last load read answer again while fresh, and are not requests.
+  const registry = createRegistry({ registry: registryUrl, fetch: cachedFetch(logged) });
+  // Each pick's size as its manifest says, by tarball url: an estimate of the install to come.
+  const sizes = new Map<string, Size>();
+  const pick = registry.pick!;
+  registry.pick = async (spec, pinned, options) => {
+    const m = await pick(spec, pinned, options);
+    const { fileCount, unpackedSize } = m.dist as { fileCount?: number; unpackedSize?: number };
+    if (fileCount && unpackedSize) {
+      sizes.set(m.dist.tarball, { files: fileCount, bytes: unpackedSize });
+    }
+    return m;
+  };
 
   return {
     registry,
@@ -164,12 +183,12 @@ export function createClient(registryUrl: string, onChange: () => void): Client 
         await after;
         const start = performance.now();
         const resolution = await resolveTree(
-          { name: "playground", version: "0.0.0", dependencies },
+          { name: "project", version: "0.0.0", dependencies },
           {
             registry,
             onPick(pkg, from) {
               if (from === "") picked(pkg);
-              onPick(pkg, from);
+              onPick(pkg, from, sizes.get(pkg.resolved));
             },
           },
         );
