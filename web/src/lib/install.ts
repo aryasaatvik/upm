@@ -4,7 +4,8 @@
 // before a download. Those, and upm's commands, load on the first install.
 import type { InstallResult } from "upm/src/api.ts";
 import type { TarEntry } from "upm/src/tar.ts";
-import { backendKey } from "upm/src/store-backend.ts";
+import { blobKey, indexKey } from "upm/src/store-backend.ts";
+import type { BackendIndex } from "upm/src/store-backend.ts";
 import { opfsBackend } from "./opfs.ts";
 
 const PROJECT = "/project";
@@ -60,11 +61,14 @@ export async function storedFiles(integrity: string): Promise<TarEntry[] | undef
       }));
     } else {
       const backend = await opfsBackend();
-      const pkg = { integrity, key: backendKey(integrity) };
-      const call = { signal: new AbortController().signal, alive: () => {} };
-      const kept = await backend?.getIndex(pkg, call);
-      if (!backend || !kept) return undefined;
-      const got = backend.getBlobs(pkg, kept.files, call);
+      const options = { signal: new AbortController().signal, alive: () => {} };
+      const data = await backend?.get(indexKey(integrity), options);
+      if (!backend || !data) return undefined;
+      const kept = JSON.parse(new TextDecoder().decode(data)) as BackendIndex;
+      const got = backend.getMany!(
+        kept.files.map((file) => blobKey(file.hash)),
+        options,
+      );
       listed = kept.files.map((file, i) => ({ ...file, read: async () => (await got)[i] }));
     }
     const blobs = await Promise.all(listed.map((file) => file.read()));
@@ -109,7 +113,7 @@ export function installInTab(
   const run = running.then(async () => {
     const node = await ready();
     const storeBackend = await opfsBackend();
-    if (!storeBackend?.put) log("the store is in memory only: OPFS cannot be written here", "warn");
+    if (!storeBackend?.set) log("the store is in memory only: OPFS cannot be written here", "warn");
     node.fs.rmSync(PROJECT, { recursive: true, force: true });
     node.fs.mkdirSync(PROJECT, { recursive: true });
     node.fs.writeFileSync(`${PROJECT}/package.json`, manifestOf(dependencies).data);

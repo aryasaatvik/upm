@@ -21,14 +21,8 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 import { fromShasum } from "../src/integrity.ts";
 import { hashOf } from "./hash.ts";
 import { createStore } from "../src/store.ts";
-import type {
-  BackendCall,
-  BackendFile,
-  BackendIndex,
-  BackendPackage,
-  BackendPut,
-  StoreBackend,
-} from "../src/store-backend.ts";
+import { indexKey } from "../src/store-backend.ts";
+import type { BackendIndex, StoreBackend } from "../src/store-backend.ts";
 import { makeTarball } from "./tarball.ts";
 
 let dir: string;
@@ -708,15 +702,36 @@ describe("a store backend", () => {
     const { index } = await store.add(url, integrity);
     await store.flush();
 
-    const kept = backend.indexes.get(integrity)!;
+    const kept = backend.index(integrity)!;
     expect(kept).toMatchObject({ v: 1, integrity, unpackedSize: index.unpackedSize });
     expect(kept.files.map((f) => f.path)).toEqual(index.files.map((f) => f.path));
     expect(kept.files.find((f) => f.path === "bin/cli.js")?.exec).toBe(true);
-    expect(backend.sources).toEqual([{ url, authorized: false }]);
-    expect(backend.blobs.size).toBe(2);
-    for (const [hash, data] of backend.blobs) {
-      expect(hash).toBe(`sha512-${createHash("sha512").update(data).digest("base64url")}`);
+    expect(backend.blobs()).toHaveLength(2);
+    for (const [key, data] of backend.blobs()) {
+      expect(key).toBe(`blob/sha512-${createHash("sha512").update(data).digest("base64url")}`);
     }
+    // The index goes last, once its blobs are in.
+    expect(backend.sets.at(-1)).toBe(indexKey(integrity));
+  });
+
+  it("skips a package downloaded with credentials, unless the backend is private", async () => {
+    const auth = { "//reg/": "Bearer secret" };
+    const shared = memoryBackend();
+    const one = createStore({ dir, fetch: stubFetch(tarball), backend: shared, auth });
+    await one.add(url, integrity);
+    await one.flush();
+    expect(shared.sets).toEqual([]);
+
+    const own = { ...memoryBackend(), private: true };
+    const other = createStore({
+      dir: await otherDir(),
+      fetch: stubFetch(tarball),
+      backend: own,
+      auth,
+    });
+    await other.add(url, integrity);
+    await other.flush();
+    expect(own.index(integrity)).toBeDefined();
   });
 
   it("fills a store without a download, the same files as one", async () => {
@@ -752,9 +767,9 @@ describe("a store backend", () => {
 
   it("downloads instead, and says so once, when a blob does not match its hash", async () => {
     const backend = await filled();
-    const [hash, data] = [...backend.blobs][0]!;
-    backend.blobs.set(
-      hash,
+    const [key, data] = backend.blobs()[0]!;
+    backend.data.set(
+      key,
       data.map((byte) => byte ^ 1),
     );
 
@@ -769,9 +784,9 @@ describe("a store backend", () => {
 
   it("takes a trusted backend's blobs without hashing them", async () => {
     const backend = await filled();
-    const [hash, data] = [...backend.blobs][0]!;
-    backend.blobs.set(
-      hash,
+    const [key, data] = backend.blobs()[0]!;
+    backend.data.set(
+      key,
       data.map((byte) => byte ^ 1),
     );
     const fetch = stubFetch(tarball);
@@ -798,8 +813,9 @@ describe("a store backend", () => {
     ["a mode that is not one", { exec: "yes" }],
   ])("downloads instead of trusting an index with %s", async (_, change) => {
     const backend = await filled();
-    const kept = backend.indexes.get(integrity)!;
+    const kept = backend.index(integrity)!;
     kept.files[0] = { ...kept.files[0]!, ...(change as object) };
+    backend.setIndex(integrity, kept);
     const fetch = stubFetch(tarball);
     const failed = vi.fn();
     const store = createStore({ dir: await otherDir(), fetch, backend, backendFailed: failed });
@@ -812,15 +828,45 @@ describe("a store backend", () => {
   it("downloads instead of taking another package's index", async () => {
     const backend = await filled();
     const other = makeTarball([{ path: "a.js", data: "other" }]);
-    backend.indexes.set(hashOf(other), backend.indexes.get(integrity)!);
+    backend.setIndex(hashOf(other), backend.index(integrity)!);
     const fetch = stubFetch(other);
     await createStore({ dir: await otherDir(), fetch, backend }).add(url, hashOf(other));
     expect(fetch.calls).toEqual([url]);
   });
 
+  it.each([
+    [
+      "an index cut short",
+      (backend: ReturnType<typeof memoryBackend>) => {
+        const key = indexKey(integrity);
+        backend.data.set(key, backend.data.get(key)!.subarray(0, 10));
+      },
+    ],
+    [
+      "a blob cut short",
+      (backend: ReturnType<typeof memoryBackend>) => {
+        const [key, data] = backend.blobs()[0]!;
+        backend.data.set(key, data.subarray(0, 1));
+      },
+    ],
+  ])("downloads, and says nothing, for %s", async (_, cut) => {
+    const backend = await filled();
+    cut(backend);
+    const fetch = stubFetch(tarball);
+    const failed = vi.fn();
+    const store = createStore({ dir: await otherDir(), fetch, backend, backendFailed: failed });
+    await store.add(url, integrity);
+    await store.flush();
+    expect(fetch.calls).toEqual([url]);
+    expect(failed).not.toHaveBeenCalled();
+    // And the put writes it whole again.
+    expect(backend.index(integrity)).toBeDefined();
+    for (const [key, data] of backend.blobs()) expect(`blob/${sha512(data)}`).toBe(key);
+  });
+
   it("is still offline when the backend has not got every blob", async () => {
     const backend = await filled();
-    backend.blobs.delete([...backend.blobs.keys()][0]!);
+    backend.data.delete(backend.blobs()[0]![0]);
     const store = createStore({ dir: await otherDir(), backend, offline: true });
     await expect(store.add(url, integrity)).rejects.toMatchObject({ code: "EOFFLINE" });
   });
@@ -831,7 +877,7 @@ describe("a store backend", () => {
       calls++;
       return Promise.reject(new Error("down"));
     };
-    const backend: StoreBackend = { getIndex: down, getBlobs: down, put: down };
+    const backend: StoreBackend = { get: down, set: down };
     const tarballs: Record<string, Uint8Array> = {};
     for (let i = 0; i < 6; i++)
       tarballs[`https://reg/${i}.tgz`] = makeTarball([{ path: "a.js", data: `${i}` }]);
@@ -851,7 +897,7 @@ describe("a store backend", () => {
 
   it("moves on from a backend that never answers", async () => {
     const never = () => new Promise<never>(() => {});
-    const backend: StoreBackend = { getIndex: never, getBlobs: never };
+    const backend: StoreBackend = { get: never };
     const fetch = stubFetch(tarball);
     const failed = vi.fn();
     const store = createStore({ dir, fetch, backend, backendFailed: failed, stall: 50 });
@@ -860,15 +906,15 @@ describe("a store backend", () => {
     expect(failed.mock.calls[0]![0]).toMatchObject({ code: "ETIMEDOUT" });
   });
 
-  it("gives up on a put that goes quiet, and counts reads as progress", async () => {
-    const put = vi.fn(async ({ index, read }: BackendPut, { signal }: BackendCall) => {
-      for (const file of index.files) {
+  it("gives up on a set that goes quiet, and counts `alive` as progress", async () => {
+    const set = vi.fn<NonNullable<StoreBackend["set"]>>(async (_, __, { signal, alive }) => {
+      for (let i = 0; i < 3; i++) {
         await sleep(30);
-        await read(file);
+        alive();
       }
       await new Promise((_, reject) => signal.addEventListener("abort", reject));
     });
-    const backend: StoreBackend = { ...memoryBackend(), put };
+    const backend: StoreBackend = { ...memoryBackend(), set, concurrency: 1 };
     const failed = vi.fn();
     const store = createStore({
       dir,
@@ -879,15 +925,15 @@ describe("a store backend", () => {
     });
     await store.add(url, integrity);
     await store.flush();
-    // Three reads 30 ms apart outlast a 50 ms stall, then the put is abandoned.
-    expect(put).toHaveBeenCalledOnce();
+    // Three signs 30 ms apart outlast a 50 ms stall, then the set is abandoned, and the rest.
+    expect(set).toHaveBeenCalledOnce();
     expect(failed.mock.calls[0]![0]).toMatchObject({ code: "ETIMEDOUT" });
   });
 
   it("keeps a lookup from waiting behind puts", async () => {
     let release!: () => void;
     const held = new Promise<void>((done) => (release = done));
-    const backend: StoreBackend = { ...memoryBackend(), put: () => held, concurrency: 1 };
+    const backend: StoreBackend = { ...memoryBackend(), set: () => held, concurrency: 1 };
     const one = makeTarball([{ path: "a.js", data: "one" }]);
     const store = createStore({
       dir,
@@ -905,7 +951,7 @@ describe("a store backend", () => {
   it("waits in every flush for every put", async () => {
     let release!: () => void;
     const held = new Promise<void>((done) => (release = done));
-    const backend: StoreBackend = { ...memoryBackend(), put: () => held };
+    const backend: StoreBackend = { ...memoryBackend(), set: () => held };
     const store = createStore({ dir, fetch: stubFetch(tarball), backend });
     await store.add(url, integrity);
     let flushed = 0;
@@ -924,7 +970,7 @@ describe("a store backend", () => {
     const store = createStore({ dir, fetch: stubFetch(odd), backend, backendFailed: failed });
     await store.add(url, hashOf(odd));
     await store.flush();
-    expect(backend.indexes.size).toBe(0);
+    expect(backend.data.size).toBe(0);
     expect(failed).not.toHaveBeenCalled();
   });
 
@@ -945,11 +991,11 @@ describe("a store backend", () => {
     let most = 0;
     const slow: StoreBackend = {
       ...backend,
-      async getBlobs(pkg, files) {
+      async getMany(keys) {
         most = Math.max(most, ++held);
         await sleep(5);
         held--;
-        return await backend.getBlobs(pkg, files);
+        return await backend.getMany(keys);
       },
       concurrency: 4,
     };
@@ -961,27 +1007,35 @@ describe("a store backend", () => {
 
 /** An in-memory backend, and what it was asked for and handed. */
 function memoryBackend() {
-  const indexes = new Map<string, BackendIndex>();
-  const blobs = new Map<string, Uint8Array>();
+  const data = new Map<string, Uint8Array>();
   const asked: string[][] = [];
-  const sources: BackendPut["source"][] = [];
+  const sets: string[] = [];
+  const text = (value: Uint8Array) => new TextDecoder().decode(value);
   return {
-    indexes,
-    blobs,
+    data,
     asked,
-    sources,
-    getIndex: async ({ integrity }: BackendPackage) => structuredClone(indexes.get(integrity)),
-    async getBlobs(_: BackendPackage, files: BackendFile[]) {
-      asked.push(files.map((file) => file.hash));
-      return files.map((file) => blobs.get(file.hash));
+    sets,
+    index: (integrity: string): BackendIndex | undefined => {
+      const value = data.get(indexKey(integrity));
+      return value && JSON.parse(text(value));
     },
-    async put({ integrity, index, read, source }: BackendPut) {
-      sources.push(source);
-      for (const file of index.files) blobs.set(file.hash, new Uint8Array(await read(file)));
-      indexes.set(integrity, index);
+    setIndex: (integrity: string, index: BackendIndex) =>
+      data.set(indexKey(integrity), new TextEncoder().encode(JSON.stringify(index))),
+    blobs: () => [...data].filter(([key]) => key.startsWith("blob/")),
+    get: async (key: string) => data.get(key),
+    async getMany(keys: string[]) {
+      asked.push(keys);
+      return keys.map((key) => data.get(key));
+    },
+    async set(key: string, value: Uint8Array) {
+      sets.push(key);
+      data.set(key, new Uint8Array(value));
     },
   } satisfies StoreBackend & Record<string, unknown>;
 }
+
+const sha512 = (data: Uint8Array) =>
+  `sha512-${createHash("sha512").update(data).digest("base64url")}`;
 
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
 

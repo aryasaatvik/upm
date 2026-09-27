@@ -251,23 +251,24 @@ browser's OPFS. upm asks it for a package before downloading one, and hands it e
 downloads before the command returns. The store is still a real directory that projects link
 from.
 
+A backend holds bytes by key; upm decides the keys and what they hold:
+
 ```js
 import { install } from "upm";
 
-const indexes = new Map(); // integrity -> index
-const blobs = new Map(); // file hash -> bytes
+const data = new Map();
 
 await install({
   storeBackend: {
-    getIndex: async ({ integrity }) => indexes.get(integrity),
-    getBlobs: async (pkg, files) => files.map((file) => blobs.get(file.hash)),
-    async put({ integrity, index, read }) {
-      for (const file of index.files) blobs.set(file.hash, await read(file));
-      indexes.set(integrity, index);
-    },
+    get: async (key) => data.get(key),
+    set: async (key, value) => void data.set(key, value),
   },
 });
 ```
+
+Keys are `/`-separated and safe as file names, and a key's value never changes. An optional
+`getMany(keys)` reads several in one call. Without `set`, the backend is only read. Packages
+downloaded with credentials are not handed to it unless it says it is `private`.
 
 A backend must be trusted as the store is: it decides what a package holds. Its files are
 checked against their hashes unless it says it is `trusted`, and its paths must stay inside the

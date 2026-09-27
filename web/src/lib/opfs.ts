@@ -1,9 +1,9 @@
 // What this browser keeps on OPFS between visits: upm's store backend, the content every install
 // downloaded (`upm-store/`), and the registry documents the resolver read (`upm-docs/`).
 //
-// `upm-store/index/<key>.json` names a package's files and `upm-store/blobs/<hash>` holds each
-// one's bytes. Content never changes under its name, so tabs share it with no lock: a write
-// lands whole on `close()`, and the index goes last, once its blobs are all in.
+// A backend key `<dir>/<name>` is the file `upm-store/<dir>/<name>`. A key's value never
+// changes, so tabs share them with no lock: a write lands whole on `close()`, and upm sets a
+// package's index last, once its blobs are all in.
 import { concat, shortHash } from "upm/src/runtime.ts";
 import type { StoreBackend } from "upm/src/store-backend.ts";
 
@@ -11,17 +11,23 @@ const DIR = "upm-store";
 /** OPFS calls in flight at once, across every package and tab's install. */
 const LANES = 32;
 
-let opened: Promise<Dirs | undefined> | undefined;
-
-interface Dirs {
-  index: FileSystemDirectoryHandle;
-  blobs: FileSystemDirectoryHandle;
-}
+let opened: Promise<FileSystemDirectoryHandle | undefined> | undefined;
 
 /** The backend, or undefined where there is no OPFS. Read-only where files cannot be written. */
 export async function opfsBackend(): Promise<StoreBackend | undefined> {
-  const dirs = await (opened ??= open());
-  if (!dirs) return undefined;
+  const home = await (opened ??= open());
+  if (!home) return undefined;
+  const dirs = new Map<string, Promise<FileSystemDirectoryHandle>>();
+  /** A key's directory and file name. */
+  const at = async (key: string): Promise<[FileSystemDirectoryHandle, string]> => {
+    const slash = key.indexOf("/");
+    const name = key.slice(slash + 1);
+    const dir = key.slice(0, slash);
+    let handle = dirs.get(dir);
+    if (!handle) dirs.set(dir, (handle = home.getDirectoryHandle(dir, { create: true })));
+    return [await handle, name];
+  };
+  const get = (key: string) => lane(async () => read(...(await at(key))));
   const writable =
     typeof FileSystemFileHandle !== "undefined" &&
     "createWritable" in FileSystemFileHandle.prototype;
@@ -30,53 +36,32 @@ export async function opfsBackend(): Promise<StoreBackend | undefined> {
     trusted: true,
     // Local and fast: the lanes, not the package count, are what bound it.
     concurrency: LANES,
-    async getIndex({ key }) {
-      const data = await lane(() => read(dirs.index, `${key}.json`));
-      // A write a closed tab cut short leaves an empty or partial index: a miss, not a failure.
-      try {
-        return data && JSON.parse(new TextDecoder().decode(data));
-      } catch {
-        return undefined;
-      }
-    },
-    getBlobs: (_, files) =>
-      Promise.all(files.map((file) => lane(() => read(dirs.blobs, file.hash, file.size)))),
-    put: writable
-      ? async ({ key, index, read: readBlob }) => {
-          const unique = new Map(index.files.map((file) => [file.hash, file]));
-          await Promise.all(
-            [...unique.values()].map((file) =>
-              lane(async () => {
-                if (await find(dirs.blobs, file.hash, file.size)) return;
-                await write(dirs.blobs, file.hash, await readBlob(file));
-              }, LATER),
-            ),
-          );
-          await lane(() => write(dirs.index, `${key}.json`, JSON.stringify(index)), LATER);
-        }
+    get,
+    getMany: (keys) => Promise.all(keys.map(get)),
+    set: writable
+      ? (key, value) =>
+          lane(async () => {
+            const [dir, name] = await at(key);
+            // One a closed tab cut short is not its size, and is written again.
+            if (await find(dir, name, value.length)) return;
+            await write(dir, name, value);
+          }, LATER)
       : undefined,
   };
 }
 
-async function open(): Promise<Dirs | undefined> {
+async function open(): Promise<FileSystemDirectoryHandle | undefined> {
   try {
     const root = await navigator.storage.getDirectory();
     // The whole-filesystem snapshot this replaced.
     void root.removeEntry("upm", { recursive: true }).catch(() => {});
-    const home = await root.getDirectoryHandle(DIR, { create: true });
-    return {
-      index: await home.getDirectoryHandle("index", { create: true }),
-      blobs: await home.getDirectoryHandle("blobs", { create: true }),
-    };
+    return await root.getDirectoryHandle(DIR, { create: true });
   } catch {
     return undefined;
   }
 }
 
-/**
- * A file, or undefined when it is missing or not `size` long: a write a closed tab cut short
- * leaves an empty file, which must read as missing so the next put writes it again.
- */
+/** A file, or undefined when it is missing or not `size` long. */
 async function find(
   dir: FileSystemDirectoryHandle,
   name: string,
@@ -90,19 +75,15 @@ async function find(
   }
 }
 
-async function read(
-  dir: FileSystemDirectoryHandle,
-  name: string,
-  size?: number,
-): Promise<Uint8Array | undefined> {
-  const file = await find(dir, name, size);
+async function read(dir: FileSystemDirectoryHandle, name: string): Promise<Uint8Array | undefined> {
+  const file = await find(dir, name);
   return file && new Uint8Array(await file.arrayBuffer());
 }
 
 async function write(
   dir: FileSystemDirectoryHandle,
   name: string,
-  data: string | Uint8Array,
+  data: Uint8Array,
 ): Promise<void> {
   const stream = await (await dir.getFileHandle(name, { create: true })).createWritable();
   await stream.write(data as FileSystemWriteChunkType);

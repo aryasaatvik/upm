@@ -277,7 +277,7 @@ export function createStore(options: StoreOptions = {}): Store {
         trace("slot", { i: integrity, behind });
         return download(tarball, integrity, hit !== undefined, signal);
       });
-      if (backend?.put) void client().then((it) => it?.put(integrity, index, tarball));
+      if (backend?.set) void client().then((it) => it?.put(integrity, index, tarball));
       return index;
     } finally {
       behind--;

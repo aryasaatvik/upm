@@ -98,24 +98,20 @@ describe("api", () => {
   });
 
   it("installs through a store backend, which holds the package once the install returns", async () => {
-    const indexes = new Map<string, upm.BackendIndex>();
-    const blobs = new Map<string, Uint8Array>();
+    const data = new Map<string, Uint8Array>();
     const storeBackend: upm.StoreBackend = {
-      getIndex: async ({ integrity }) => indexes.get(integrity),
-      getBlobs: async (_, files) => files.map((file) => blobs.get(file.hash)),
-      async put({ integrity, index, read }) {
-        for (const file of index.files) blobs.set(file.hash, await read(file));
-        indexes.set(integrity, index);
-      },
+      get: async (key) => data.get(key),
+      set: async (key, value) => void data.set(key, value),
     };
+    const indexes = () => [...data.keys()].filter((key) => key.startsWith("index/"));
     await writeFile(join(dir, "package.json"), '{ "dependencies": { "nanoid": "^5" } }');
     await upm.install({ ...base, storeBackend });
-    expect([...indexes.keys()]).toEqual([hashOf(tarball)]);
+    expect(indexes()).toHaveLength(1);
 
     // `fetchPackages` hands on what it downloads before it returns too.
-    indexes.clear();
+    data.clear();
     await upm.fetchPackages(["nanoid"], { ...base, store: join(dir, "fetched"), storeBackend });
-    expect([...indexes.keys()]).toEqual([hashOf(tarball)]);
+    expect(indexes()).toHaveLength(1);
 
     await rm(join(dir, "node_modules"), { recursive: true });
     let requested = 0;

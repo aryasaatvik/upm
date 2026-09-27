@@ -9,6 +9,47 @@ import type { PackageIndex, StoreOptions, Tarball } from "./store.ts";
 import type { Writer } from "./unpack.ts";
 import { sizeOfSync, trace } from "./util.ts";
 
+/**
+ * One call. It is abandoned once it makes no progress for 30 s: `signal` aborts and the store
+ * moves on. A call that moves many bytes says it is still going with `alive`.
+ */
+export interface BackendCallOptions {
+  signal: AbortSignal;
+  alive(): void;
+}
+
+/**
+ * Shared storage behind the store: a remote cache, a team store, a key-value database. It holds
+ * bytes by key, and upm decides the keys and what they hold. The store stays a real directory to
+ * link from; the backend is asked on a miss, before a download, and handed each package the
+ * store downloads. The caller owns it: upm never closes it.
+ *
+ * Keys are `/`-separated and safe as file names: `index/<integrity>` holds a package's
+ * `BackendIndex` as JSON, and `blob/<hash>` a file's bytes. A key's value never changes, so a
+ * backend may skip a `set` for a key it already holds. The index is set after its blobs.
+ *
+ * It must be trusted as much as the store itself. A blob is checked against its hash, which
+ * catches damage, but nothing can check a file list against the tarball's integrity without the
+ * tarball: whoever can write to the backend decides what a package holds.
+ */
+export interface StoreBackend {
+  /** The bytes at `key`, or undefined when it has none. A throw or a timeout is a failure. */
+  get(key: string, options: BackendCallOptions): Promise<Uint8Array | undefined>;
+  /** Several keys in one call, in the order asked, up to 8 MB at a time. Default: `get` each. */
+  getMany?(keys: string[], options: BackendCallOptions): Promise<(Uint8Array | undefined)[]>;
+  /** Keep bytes at `key`. Without it the backend is only read. */
+  set?(key: string, value: Uint8Array, options: BackendCallOptions): Promise<void>;
+  /** Skip hashing blobs on arrival, for a backend as safe from damage as the store's disk. */
+  trusted?: boolean;
+  /**
+   * Also keep packages downloaded with credentials. Off by default, so a shared backend never
+   * holds what some of its readers may not see.
+   */
+  private?: boolean;
+  /** Calls in flight at once reading, and as many writing. Default 16 each. */
+  concurrency?: number;
+}
+
 /** A file of a package, named by the sha512 of its bytes: `sha512-<base64url>`. */
 export interface BackendFile {
   path: string;
@@ -18,66 +59,14 @@ export interface BackendFile {
 }
 
 /**
- * A package's files as a backend keeps them. The same on every platform, and one blob per hash
- * serves both file modes. `v` changes when the shape does.
+ * A package's files, as a backend keeps them at `index/<integrity>`. The same on every
+ * platform, and one blob per hash serves both file modes. `v` changes when the shape does.
  */
 export interface BackendIndex {
   v: 1;
   integrity: string;
   unpackedSize: number;
   files: BackendFile[];
-}
-
-/** The package a call is about: its integrity, and the same as a key or file name (base64url). */
-export interface BackendPackage {
-  integrity: string;
-  key: string;
-}
-
-/**
- * One call. It is abandoned once it makes no progress for 30 s: `signal` aborts and the store
- * moves on. A call that moves many bytes says it is still going with `alive`.
- */
-export interface BackendCall {
-  signal: AbortSignal;
-  alive(): void;
-}
-
-export interface BackendPut extends BackendPackage {
-  index: BackendIndex;
-  /** A file's bytes, read back from the store. */
-  read(file: BackendFile): Promise<Uint8Array>;
-  /**
-   * Where the tarball came from: its url, none for a file on this machine, and whether it was
-   * fetched with credentials. A shared backend should skip what its readers may not see, and
-   * resolve: a throw counts as a failure, and a few of them switch the backend off.
-   */
-  source: { url?: string; authorized: boolean };
-}
-
-/**
- * Shared storage behind the store: a remote cache, a team store, a key-value database. The
- * store stays a real directory to link from; the backend is asked on a miss, before a download,
- * and handed each package the store downloads. The caller owns it: upm never closes it.
- *
- * It must be trusted as much as the store itself. A blob is checked against its hash, which
- * catches damage, but nothing can check a file list against the tarball's integrity without the
- * tarball: whoever can write to the backend decides what a package holds.
- */
-export interface StoreBackend {
-  /** Undefined when it has not got the package. A throw or a timeout is a failure. */
-  getIndex(pkg: BackendPackage, call: BackendCall): Promise<BackendIndex | undefined>;
-  /** In the order asked, undefined for one it has not got. Asked a window at a time. */
-  getBlobs(
-    pkg: BackendPackage,
-    files: BackendFile[],
-    call: BackendCall,
-  ): Promise<(Uint8Array | undefined)[]>;
-  put?(entry: BackendPut, call: BackendCall): Promise<void>;
-  /** Skip hashing blobs on arrival, for a backend as safe from damage as the store's disk. */
-  trusted?: boolean;
-  /** Packages read at once, and as many written. Default 16 each. */
-  concurrency?: number;
 }
 
 export interface BackendClient {
@@ -99,9 +88,14 @@ const WINDOW = 8 * 1024 * 1024;
 const GIVE_UP = 3;
 const HASH = /^sha512-[\w-]{86}$/;
 
-/** An integrity as a key or a file name: base64url, unpadded. */
-export function backendKey(integrity: string): string {
-  return integrity.replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+/** Where a backend keeps a package's `BackendIndex`: its integrity in base64url, unpadded. */
+export function indexKey(integrity: string): string {
+  return `index/${integrity.replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "")}`;
+}
+
+/** Where a backend keeps a file's bytes. */
+export function blobKey(hash: string): string {
+  return `blob/${hash}`;
 }
 
 /** `stall`: how long a call may make no progress. */
@@ -112,6 +106,10 @@ export function createBackendClient(
   stall: number,
 ): BackendClient {
   const backend = options.backend!;
+  const getMany =
+    backend.getMany?.bind(backend) ??
+    ((keys: string[], c: BackendCallOptions) =>
+      Promise.all(keys.map((key) => backend.get(key, c))));
   // Apart, so puts running in the background never hold up a lookup an install waits on.
   const reads = createLimiter(backend.concurrency ?? CONCURRENCY);
   const writes = createLimiter(backend.concurrency ?? CONCURRENCY);
@@ -124,7 +122,8 @@ export function createBackendClient(
   }
 
   /** One backend call, abandoned once it makes no progress for `stall`. */
-  async function call<T>(run: (call: BackendCall) => Promise<T>): Promise<T> {
+  async function call<T>(run: (options: BackendCallOptions) => Promise<T>): Promise<T> {
+    if (failures >= GIVE_UP) throw new Error("store backend is off");
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     let done = false;
@@ -155,10 +154,9 @@ export function createBackendClient(
 
   async function fetch(integrity: string, repair: boolean): Promise<PackageIndex | undefined> {
     if (failures >= GIVE_UP) return undefined;
-    const pkg = { integrity, key: backendKey(integrity) };
     try {
       return await reads(async () => {
-        const kept = await call((c) => backend.getIndex(pkg, c));
+        const kept = parsed(await call((c) => backend.get(indexKey(integrity), c)));
         if (kept === undefined) return undefined;
         const files = checked(kept, integrity);
         // Each hash once, for every mode it is wanted in, and none the store already has.
@@ -171,13 +169,8 @@ export function createBackendClient(
           else if (!entry.blobs.includes(blob)) entry.blobs.push(blob);
         }
         for (const window of windows([...wanted.values()])) {
-          const got = await call((c) =>
-            backend.getBlobs(
-              pkg,
-              window.map((entry) => entry.file),
-              c,
-            ),
-          );
+          const keys = window.map((entry) => blobKey(entry.file.hash));
+          const got = await call((c) => getMany(keys, c));
           if (!(await usable(window, got))) return undefined;
           await Promise.all(
             window.flatMap(({ blobs }, i) => blobs.map((blob) => write(blob, got[i]!, repair))),
@@ -191,18 +184,21 @@ export function createBackendClient(
     }
   }
 
-  /** Every blob there at its size and, unless trusted, its hash. A wrong one is a failure. */
+  /**
+   * Every blob there at its size and, unless trusted, its hash. A short one is a write cut
+   * short, and a miss; a wrong one is a failure.
+   */
   async function usable(
     window: { file: BackendFile }[],
     got: (Uint8Array | undefined)[],
   ): Promise<boolean> {
     if (!Array.isArray(got) || got.length !== window.length) {
-      throw new Error("store backend answered for other blobs than it was asked for");
+      throw new Error("store backend answered for other keys than it was asked for");
     }
     const checks = window.map(async ({ file }, i) => {
       const data = got[i];
-      if (data === undefined) return false;
-      if (data.length !== file.size || !(backend.trusted || (await matches(file.hash, data)))) {
+      if (data?.length !== file.size) return false;
+      if (!(backend.trusted || (await matches(file.hash, data)))) {
         throw new Error(`store backend holds damaged content for ${file.hash}`);
       }
       return true;
@@ -218,9 +214,9 @@ export function createBackendClient(
   }
 
   async function send(integrity: string, index: PackageIndex, tarball: Tarball): Promise<void> {
-    if (!backend.put || failures >= GIVE_UP) return;
     const url = typeof tarball === "string" ? tarball : undefined;
-    const source = { url, authorized: !!(url && options.auth && authFor(options.auth, url)) };
+    if (!backend.set || failures >= GIVE_UP || !url) return;
+    if (!backend.private && options.auth && authFor(options.auth, url)) return;
     const paths = new Map<string, string>();
     const files = index.files.map((file) => {
       const { hash, exec } = backendHash(file.blob);
@@ -235,30 +231,26 @@ export function createBackendClient(
     } catch {
       return;
     }
-    try {
-      await writes(() =>
-        call((c) =>
-          backend.put!(
-            {
-              integrity,
-              key: backendKey(integrity),
-              index: kept,
-              source,
-              // Each read is progress: a big package is slow to hand over, not stuck.
-              read: async (file) => {
-                c.alive();
-                const data = await disk(() => builtin.fsp.readFile(paths.get(file.hash)!));
-                c.alive();
-                return data;
-              },
-            },
-            c,
-          ),
-        ),
-      );
-    } catch (error) {
-      failed(error);
-    }
+    // The first failure stops the package's other sets, and its index is never set.
+    let broken: { error: unknown } | undefined;
+    const set = (key: string, value: () => Promise<Uint8Array>) =>
+      writes(async () => {
+        if (broken) return;
+        try {
+          await call(async (c) => backend.set!(key, await value(), c));
+        } catch (error) {
+          broken ??= { error };
+        }
+      });
+    // Each blob read in its turn, so a big package is never all in memory at once.
+    await Promise.all(
+      [...paths].map(([hash, path]) =>
+        set(blobKey(hash), () => disk(() => builtin.fsp.readFile(path))),
+      ),
+    );
+    const json = new TextEncoder().encode(JSON.stringify(kept));
+    await set(indexKey(integrity), async () => json);
+    if (broken) failed(broken.error);
   }
 
   function put(integrity: string, index: PackageIndex, tarball: Tarball): void {
@@ -271,6 +263,16 @@ export function createBackendClient(
   }
 
   return { fetch, put, flush };
+}
+
+/** An index's bytes as JSON, or undefined for none or a write cut short. */
+function parsed(data: Uint8Array | undefined): BackendIndex | undefined {
+  if (data === undefined) return undefined;
+  try {
+    return JSON.parse(new TextDecoder().decode(data)) as BackendIndex;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
