@@ -1,4 +1,5 @@
 // The top bar: the landing's hero in one row, with the spec to resolve and the package's links.
+import { useEffect, useRef } from "react";
 import type { View } from "../app.tsx";
 import {
   ARROW,
@@ -19,6 +20,7 @@ import {
   TOGGLE,
 } from "./hero.ts";
 import { repoUrl } from "./package.tsx";
+import { suggest } from "./suggest.ts";
 import { Icon, type IconName } from "./ui.tsx";
 
 export function TopBar(props: {
@@ -33,6 +35,18 @@ export function TopBar(props: {
   const top = view?.top instanceof Error ? undefined : view?.top;
   const manifest = view?.manifest instanceof Error ? undefined : view?.manifest;
   const repo = repoUrl(manifest);
+  const input = useRef<HTMLInputElement>(null);
+  // The latest props, for the suggestions bound once below.
+  const latest = useRef(props);
+  latest.current = props;
+  useEffect(
+    () =>
+      suggest(input.current!, (name, run) => {
+        latest.current.setSpec(name);
+        if (run) latest.current.onRun(name);
+      }),
+    [],
+  );
   // Equal side columns keep the search box centered on the page.
   return (
     <header className="grid shrink-0 grid-cols-[1fr_minmax(0,24rem)_1fr] items-center gap-3 px-4 py-2 sm:gap-6 sm:px-8">
@@ -49,6 +63,7 @@ export function TopBar(props: {
       >
         <div className="relative flex min-w-0 flex-1">
           <input
+            ref={input}
             autoFocus={!spec}
             value={spec}
             onChange={(e) => props.setSpec(e.target.value)}

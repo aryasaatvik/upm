@@ -20,6 +20,7 @@ import {
   toggle,
 } from "./components/hero.ts";
 import { bindInstall, installCard } from "./components/install.ts";
+import { suggest } from "./components/suggest.ts";
 import { EXAMPLES, pathOf } from "./lib/route.ts";
 import { navigate } from "./router.ts";
 
@@ -83,12 +84,18 @@ export function mount(root: HTMLElement) {
     if (spec) navigate(pathOf(spec));
   });
   bindInstall(root.querySelector("aside")!);
+  const input = form.querySelector("input")!;
+  const unsuggest = suggest(input, (name, run) => {
+    if (run) navigate(pathOf(name));
+    else input.value = name;
+  });
   // Focused before the listeners below, so opening the page does not count as using it.
-  form.querySelector("input")!.focus();
+  input.focus();
   // Load the app once the page is in use, so a package opens without a wait.
   root.addEventListener("pointerover", loadPlay, { once: true });
   root.addEventListener("focusin", loadPlay, { once: true });
   root.addEventListener("input", loadPlay, { once: true });
+  return unsuggest;
 }
 
 const loadPlay = () => import("./play.tsx");

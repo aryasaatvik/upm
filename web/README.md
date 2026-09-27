@@ -27,6 +27,12 @@ A browser client for upm. Enter a package spec:
 it resolves the tree with `upm/resolver`, shows the lockfile upm would write, and fetches,
 verifies and lists the package's tarball — all from the browser, against the registry's CORS.
 
+While a name is typed, the spec box on both pages suggests packages from the registry's
+`/-/v1/search` (`src/components/suggest.ts`), and after `@`, the package's tags and versions from
+its abbreviated document, asked with the resolver's `accept` so a run finds it in the HTTP cache.
+Each keystroke asks right away, and until its answer lands, an earlier answer narrowed to the
+new text shows instead.
+
 ```sh
 node ./upm install         # from the repo root
 npm run web                # or: cd web && npx vite
