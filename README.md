@@ -696,6 +696,9 @@ Thanks to [npm](https://github.com/npm/cli) for its registry and package behavio
 and [pnpm](https://github.com/pnpm/pnpm) for its shared store and workspace design.
 upm is an independent implementation, not a fork.
 
+Thanks to Sondre Bjellås ([@sondreb](https://github.com/sondreb)) for donating the
+`upm` package name.
+
 ## License
 
 [MIT](LICENSE).
