@@ -12,10 +12,10 @@ type Packages = Record<string, ResolvedPackage>;
 type Graph = Map<string, string[]>;
 
 /**
- * `<name>@<version>-<hash>`, the directory name of a `.store` entry.
+ * `<name>@<version>-<hash>`, the directory name of a `.upm` entry.
  *
  * **Invariant: the result is always one path segment.** A scoped name's `/` is escaped to `+`
- * (pnpm's `.pnpm` convention), so `@scope/pkg` lands at `.store/@scope+pkg@1.2.3-<hash>` and the
+ * (pnpm's `.pnpm` convention), so `@scope/pkg` lands at `.upm/@scope+pkg@1.2.3-<hash>` and the
  * store stays flat: the linker never nests, and stage 6's GC is one `readdir`. `+` is not a legal
  * character in an npm package name, and the hash covers the unescaped name regardless.
  */
@@ -30,7 +30,7 @@ export async function storeKey(packages: Packages, key: string): Promise<string>
 
 /**
  * Every package's store key, computed in one pass. Keys are the `name@version` ids. A workspace
- * has none: it is linked from its own directory, never placed in `.store`.
+ * has none: it is linked from its own directory, never placed in `.upm`.
  */
 export async function storeKeys(packages: Packages): Promise<Record<string, string>> {
   const digests = await digestsOf(packages);

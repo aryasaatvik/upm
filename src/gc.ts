@@ -1,4 +1,4 @@
-// Reclaiming space. Two address spaces, so two jobs (IDEA.md 5.5): the `.store` entries of one
+// Reclaiming space. Two address spaces, so two jobs (IDEA.md 5.5): the `.upm` entries of one
 // project, and the content store every project shares. Mark and sweep, never refcounts — a
 // refcount survives neither a second upm running nor `rm -rf node_modules`.
 import { builtin } from "./builtin.ts";
@@ -25,11 +25,11 @@ export interface StorePrune {
 export const GRACE_MS = 60 * 60 * 1000;
 
 /**
- * Drop `<dir>/node_modules/.store` entries this install no longer wants. `keep` holds store keys
+ * Drop `<dir>/node_modules/.upm` entries this install no longer wants. `keep` holds store keys
  * (`storeKeys()` in keys.ts). Entry files are hardlinks, so this reclaims far less than its size.
  */
 export async function sweepEntries(dir: string, keep: Set<string>): Promise<EntrySweep> {
-  const storeDir = builtin.path.join(dir, "node_modules", ".store");
+  const storeDir = builtin.path.join(dir, "node_modules", ".upm");
   const out: EntrySweep = { removed: 0, bytes: 0 };
   // An entry younger than the grace period may belong to an install that started after the
   // caller read its state, and whose keys are therefore missing from `keep`.
@@ -91,7 +91,7 @@ export async function pruneStore(storeDir: string): Promise<StorePrune> {
  * A big file is spooled to `files/<pid>-<token>-<n>.tmp` while its tarball inflates, and moved
  * to its blob once the tarball verifies. A process killed in between leaves the temp; one whose
  * pid is dead and which is past the grace period is abandoned, by the same rule as `.tmp-*`
- * entries under `.store`. A live pid, or one this machine cannot see (another pid namespace
+ * entries under `.upm`. A live pid, or one this machine cannot see (another pid namespace
  * sharing the store), is left alone.
  */
 async function sweepSpool(files: string, cutoff: number, out: StorePrune): Promise<void> {

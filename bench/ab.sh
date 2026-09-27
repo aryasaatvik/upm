@@ -70,10 +70,10 @@ prepare() { # <label> <fixture> — the project dir (fresh, with a fresh store, 
   [ "$MODE" = warm ] && rm -rf "$dir/p/node_modules"
   return 0
 }
-entries() { # <label> <fixture> — what the run produced: lockfile entries, or .store entries
+entries() { # <label> <fixture> — what the run produced: lockfile entries, or .upm entries
   local dir=$WORK/$1-$2
   if [ "$MODE" = lock ]; then grep -c '^    "[^"]*@[^"]*": {' "$dir/p/upm.lock" 2>/dev/null || echo 0
-  else ls "$dir/p/node_modules/.store" 2>/dev/null | wc -l; fi
+  else ls "$dir/p/node_modules/.upm" 2>/dev/null | wc -l; fi
 }
 
 echo "# $STAMP mode=$MODE runs=$RUNS builds=${BUILDS[*]} fixtures=${FIXTURES[*]} env=${AB_ENV:-}" | tee -a "$OUT"

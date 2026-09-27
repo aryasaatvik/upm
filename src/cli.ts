@@ -112,7 +112,7 @@ Notes
   with local/parent bins on PATH; no pre/post scripts.
   Put upm flags before the script; later args pass through (-- optional).
   run alone lists scripts; upm test = upm run test.
-  exec (also upx) uses local bins, else installs into the root's node_modules/.upm/exec
+  exec (also upx) uses local bins, else installs into the root's node_modules/.upm/.exec
   (or ~/.upm/exec) with the project registry. Use -p for packages, -c for a shell line.
 
   npm's spellings work too: --save-dev, --save-optional, --save-exact, --omit=dev

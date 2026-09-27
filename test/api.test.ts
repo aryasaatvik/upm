@@ -175,13 +175,13 @@ describe("api", () => {
     await writeFile(join(dir, "package.json"), '{"name":"demo","dependencies":{"nanoid":"^5"}}');
     const first = await upm.install(base);
     expect(first).toMatchObject({ packages: 1, upToDate: false });
-    const stateFile = join(dir, "node_modules", ".upm-state.json");
+    const stateFile = join(dir, "node_modules", ".upm.json");
     const state = await readJson(stateFile);
     expect(state).toMatchObject({
-      version: 2,
+      version: 1,
       inputs: expect.any(String),
       summary: { packages: 1, otherPlatforms: 0, warnings: [] },
-      root: { links: { nanoid: expect.stringContaining(".store") }, bins: [] },
+      root: { links: { nanoid: expect.stringContaining(".upm") }, bins: [] },
     });
 
     // The same bytes again: up to date, reported as before, and the graph never read. The
@@ -228,7 +228,7 @@ describe("api", () => {
   it("names the store it used in the inputs, defaults included, whatever the cwd", async () => {
     await writeFile(join(dir, "package.json"), '{"name":"demo","dependencies":{"nanoid":"^5"}}');
     const { store: _store, ...noStore } = base;
-    const stateFile = join(dir, "node_modules", ".upm-state.json");
+    const stateFile = join(dir, "node_modules", ".upm.json");
     const cwd = process.cwd();
     const env = {
       HOME: process.env.HOME,
@@ -531,7 +531,7 @@ describe("tarball dependencies", () => {
       { path: "package.json", data: '{"name":"local","version":"2.0.1"}' },
       { path: "index.js", data: 'module.exports = "local two";\n' },
     ]);
-    const state = async () => await readJson(join(dir, "node_modules", ".upm-state.json"));
+    const state = async () => await readJson(join(dir, "node_modules", ".upm.json"));
 
     beforeEach(async () => {
       const dependencies = { local: source, remote: url() };
@@ -640,7 +640,7 @@ describe("tarball dependencies", () => {
     const at = join(dir, "packages", "w", "node_modules", "local", "index.js");
     expect(await readFile(at, "utf8")).toContain("local");
     // Stamped though a tree with workspaces has no no-op check: the next install hashes nothing.
-    const state = await readJson(join(dir, "node_modules", ".upm-state.json"));
+    const state = await readJson(join(dir, "node_modules", ".upm.json"));
     const file = join(dir, "vendor", "local-2.0.0.tgz");
     expect(state.tarballs).toEqual({ "file:vendor/local-2.0.0.tgz": stampOf(file) });
   });

@@ -1,5 +1,5 @@
 // Our own flat lockfile. npm's v3 `packages` map is keyed by on-disk path, which the
-// `.store` symlink layout has no stable equivalent of; ours is keyed by identity.
+// `.upm` symlink layout has no stable equivalent of; ours is keyed by identity.
 import { builtin } from "./builtin.ts";
 import { normalizeBin } from "./normalize-bin.ts";
 import { registryBase, tarballUrl } from "./registry.ts";
@@ -388,7 +388,7 @@ function validate(value: unknown): Lockfile {
       }
     }
     for (const field of LISTS) stringList(entry[field], `${at}.${field}`);
-    // A `.store` entry links to packages only: a workspace is reached from a top, never from it.
+    // A `.upm` entry links to packages only: a workspace is reached from a top, never from it.
     checkEdges(entry, at, lock.packages);
   }
   for (const [path, ws] of Object.entries(lock.workspaces ?? {})) {

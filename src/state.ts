@@ -8,13 +8,13 @@ import { pid } from "./runtime.ts";
 import { replaceFile } from "./util.ts";
 import type { Resolution } from "./resolve.ts";
 
-export const STATE_FILE = ".upm-state.json";
+export const STATE_FILE = ".upm.json";
 
 export interface InstallState {
-  version: 2;
+  version: 1;
   /** Covers the resolved graph AND the flags that change what gets linked. */
   hash: string;
-  /** Sorted store keys that should exist under `node_modules/.store`. */
+  /** Sorted store keys that should exist under `node_modules/.upm`. */
   entries: string[];
   /** False when something the graph named could not be linked, so a check must run again. */
   complete: boolean;
@@ -183,7 +183,7 @@ function isState(value: unknown): value is InstallState {
   return (
     typeof state === "object" &&
     state !== null &&
-    state.version === 2 &&
+    state.version === 1 &&
     typeof state.hash === "string" &&
     typeof state.store === "string" &&
     typeof state.complete === "boolean" &&

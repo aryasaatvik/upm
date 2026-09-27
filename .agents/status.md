@@ -15,7 +15,7 @@ compatibility. Keep this page about open work, not completed implementation step
   retention policy and a test that pauses an install at the deletion race.
   Start at `src/gc.ts` and `test/gc.test.ts`.
 - **Exec projects are never reclaimed:** every set of versions `upm exec` runs keeps a
-  project under the root's `node_modules/.upm/exec`, or `~/.upm/exec` outside a project, and
+  project under the root's `node_modules/.upm/.exec`, or `~/.upm/exec` outside a project, and
   `prune` knows nothing of them. The first go only with their `node_modules`; the second
   never. A tag that moves often (`upm publish` runs npm's `latest`) leaves one per version.
   Needs a retention rule (last use, count) and a prune test that keeps a running command's
@@ -121,7 +121,7 @@ These need a scope decision, not just a patch:
   and writes `upm.lock`: decide whether to refuse there too. Start at `src/foreign-lock.ts`.
 - Workspaces are direct-only and whole-tree. Left out on purpose: `install -w` and any other
   filtered install (one state file describes one tree), hoisting, a workspace capturing a
-  registry package's transitive edge (npm links one; here a `.store` entry never points at a
+  registry package's transitive edge (npm links one; here a `.upm` entry never points at a
   workspace, which keeps the store portable), `workspace:<other>@<range>` installed under a
   different name, `workspace:./path`, `catalog:`, injected packages, `init -w` and
   `--no-workspaces`. A frozen install still globs the patterns to check the lockfile against

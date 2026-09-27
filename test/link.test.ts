@@ -81,7 +81,7 @@ afterEach(async () => {
 });
 
 describe("linkTree", () => {
-  it("builds the isolated layout: real files in .store, direct deps at the top", async () => {
+  it("builds the isolated layout: real files in .upm, direct deps at the top", async () => {
     const { store, resolution } = await seed([
       { name: "a", files: { "index.js": "module.exports = 'a'" }, deps: { b: "1.0.0" } },
       { name: "b", files: { "index.js": "module.exports = 'b'" } },
@@ -98,17 +98,17 @@ describe("linkTree", () => {
     const keyB = keys["b@1.0.0"] as string;
     expect(keyA).toMatch(/^a@1\.0\.0-[\w-]+$/);
 
-    // Top level: a symlink for the one direct dep, pointing into .store.
-    expect(await linkOf(join(nm, "a"))).toBe(`.store/${keyA}/node_modules/a`);
+    // Top level: a symlink for the one direct dep, pointing into .upm.
+    expect(await linkOf(join(nm, "a"))).toBe(`.upm/${keyA}/node_modules/a`);
     expect(await read(join(nm, "a", "index.js"))).toBe("module.exports = 'a'");
 
     // The entry's own copy of its dep, relative so the tree survives a move.
-    const inside = join(nm, ".store", keyA, "node_modules", "b");
+    const inside = join(nm, ".upm", keyA, "node_modules", "b");
     expect(await linkOf(inside)).toBe(`../../${keyB}/node_modules/b`);
     expect(await read(join(inside, "index.js"))).toBe("module.exports = 'b'");
 
-    // Real files live in the .store entry, not behind a symlink.
-    expect((await lstat(join(nm, ".store", keyA, "node_modules", "a"))).isDirectory()).toBe(true);
+    // Real files live in the .upm entry, not behind a symlink.
+    expect((await lstat(join(nm, ".upm", keyA, "node_modules", "a"))).isDirectory()).toBe(true);
   });
 
   it("places files under every depth of nesting, siblings and scoped alike", async () => {
@@ -147,7 +147,7 @@ describe("linkTree", () => {
     const keys = await storeKeys(resolution.packages);
     await linkTree(resolution, { dir: project, store });
 
-    const inside = join(project, "node_modules", ".store", keys["a@1.0.0"]!, "node_modules", "b");
+    const inside = join(project, "node_modules", ".upm", keys["a@1.0.0"]!, "node_modules", "b");
     expect(await linkOf(inside)).toBe(`../../${keys["b@1.0.0"]!}/node_modules/b`);
     expect(createRequire(join(project, "index.js"))("a")).toBe("b");
   });
@@ -250,14 +250,7 @@ describe("linkTree", () => {
     expect(await binOf(join(nm, ".bin", "a"))).toBe("../a/cli.js");
     expect(await exists(join(nm, ".bin", "runner"))).toBe(false);
     // a's own dep's bin lives inside a's entry.
-    const entryBin = join(
-      nm,
-      ".store",
-      keys["a@1.0.0"] as string,
-      "node_modules",
-      ".bin",
-      "runner",
-    );
+    const entryBin = join(nm, ".upm", keys["a@1.0.0"] as string, "node_modules", ".bin", "runner");
     expect(await binOf(entryBin)).toBe("../b/run.js");
 
     // The target must already be executable: the store keeps an -exec variant for it.
@@ -292,9 +285,9 @@ describe("linkTree", () => {
     const keyB = keys["@scope/b@1.0.0"] as string;
     expect(keyA).toContain("@scope+a@1.0.0-"); // the key itself stays one path segment
 
-    expect(await linkOf(join(nm, "@scope", "a"))).toBe(`../.store/${keyA}/node_modules/@scope/a`);
+    expect(await linkOf(join(nm, "@scope", "a"))).toBe(`../.upm/${keyA}/node_modules/@scope/a`);
     expect(await read(join(nm, "@scope", "a", "index.js"))).toBe("a");
-    const inside = join(nm, ".store", keyA, "node_modules", "@scope", "b");
+    const inside = join(nm, ".upm", keyA, "node_modules", "@scope", "b");
     expect(await linkOf(inside)).toBe(`../../../${keyB}/node_modules/@scope/b`);
     expect(await read(join(inside, "index.js"))).toBe("b");
   });
@@ -322,15 +315,10 @@ describe("linkTree", () => {
     const nm = join(project, "node_modules");
     let checked = 0;
     for (const pkg of Object.values(resolution.packages)) {
-      const nmDir = join(
-        nm,
-        ".store",
-        keys[`${pkg.name}@${pkg.version}`] as string,
-        "node_modules",
-      );
+      const nmDir = join(nm, ".upm", keys[`${pkg.name}@${pkg.version}`] as string, "node_modules");
       for (const [name, version] of Object.entries(pkg.dependencies)) {
         const at = join(nmDir, name);
-        const to = join(nm, ".store", keys[`${name}@${version}`] as string, "node_modules", name);
+        const to = join(nm, ".upm", keys[`${name}@${version}`] as string, "node_modules", name);
         expect(await readLink(at)).toBe(relative(dirname(at), to));
         expect((await stat(at)).isDirectory()).toBe(true); // it resolves
         checked++;
@@ -370,7 +358,7 @@ describe("linkTree", () => {
     expect(result.entries).toBe(1);
     expect(await exists(join(nm, "a"))).toBe(true);
     expect(await exists(join(nm, "tool"))).toBe(false);
-    expect(await readdir(join(nm, ".store"))).toHaveLength(1);
+    expect(await readdir(join(nm, ".upm"))).toHaveLength(1);
   });
 
   it("links a cycle without hanging", async () => {
@@ -388,8 +376,8 @@ describe("linkTree", () => {
     const nm = join(project, "node_modules");
     const keyA = keys["a@1.0.0"] as string;
     const keyB = keys["b@1.0.0"] as string;
-    expect(await read(join(nm, ".store", keyA, "node_modules", "b", "index.js"))).toBe("b");
-    expect(await read(join(nm, ".store", keyB, "node_modules", "a", "index.js"))).toBe("a");
+    expect(await read(join(nm, ".upm", keyA, "node_modules", "b", "index.js"))).toBe("b");
+    expect(await read(join(nm, ".upm", keyB, "node_modules", "a", "index.js"))).toBe("a");
     // Both halves of a cycle share one subgraph, so their keys carry the same hash.
     expect(keyA.split("-").at(-1)).toBe(keyB.split("-").at(-1));
   });
@@ -449,7 +437,7 @@ describe("linkTree sweep", () => {
     expect(await exists(join(nm, "b"))).toBe(false);
     expect(await exists(join(nm, ".bin", "b"))).toBe(false);
     // The one still declared is untouched, link and shim both.
-    expect(await linkOf(join(nm, "a"))).toMatch(/^\.store\/a@1\.0\.0-/);
+    expect(await linkOf(join(nm, "a"))).toMatch(/^\.upm\/a@1\.0\.0-/);
     expect(await binOf(join(nm, ".bin", "a"))).toBe("../a/cli.js");
     if (process.platform !== "win32") {
       expect((await stat(join(nm, ".bin", "a"))).mode & 0o111).toBeGreaterThan(0);
@@ -474,7 +462,7 @@ describe("linkTree sweep", () => {
     expect(await exists(join(nm, "@scope"))).toBe(false);
   });
 
-  it("leaves real directories, .store and a concurrent install's .tmp-* alone", async () => {
+  it("leaves real directories, .upm and a concurrent install's .tmp-* alone", async () => {
     const { store, resolution } = await seed([{ name: "a", files: { "index.js": "a" } }]);
     const nm = join(project, "node_modules");
     await linkTree(resolution, { dir: project, store });
@@ -482,14 +470,14 @@ describe("linkTree sweep", () => {
     // Hand-placed by a user or another tool, plus an entry another install is mid-write.
     await mkdir(join(nm, "mine"), { recursive: true });
     await writeFile(join(nm, "mine", "note.txt"), "keep me");
-    const temp = join(nm, ".store", ".tmp-9999-0");
+    const temp = join(nm, ".upm", ".tmp-9999-0");
     await mkdir(temp, { recursive: true });
 
     const second = await linkTree(resolution, { dir: project, store });
     expect(second.removed).toBe(0);
     expect(await read(join(nm, "mine", "note.txt"))).toBe("keep me");
     expect(await exists(temp)).toBe(true);
-    expect(await exists(join(nm, ".store"))).toBe(true);
+    expect(await exists(join(nm, ".upm"))).toBe(true);
   });
 
   it("removes the link, not what it points at", async () => {
@@ -506,7 +494,7 @@ describe("linkTree sweep", () => {
     expect(await read(join(outside, "data.txt"))).toBe("not ours to delete");
   });
 
-  it("sweeps a stale dep and bin inside a reused .store entry", async () => {
+  it("sweeps a stale dep and bin inside a reused .upm entry", async () => {
     const { store, resolution } = await seed([
       { name: "a", files: { "index.js": "a" }, deps: { b: "1.0.0" } },
       { name: "b", files: { "index.js": "b" } },
@@ -518,7 +506,7 @@ describe("linkTree sweep", () => {
     const entryNm = join(
       project,
       "node_modules",
-      ".store",
+      ".upm",
       keys["a@1.0.0"] as string,
       "node_modules",
     );
@@ -580,16 +568,16 @@ describe("linkTree state", () => {
     expect(await exists(join(project, "node_modules", "a"))).toBe(true);
   });
 
-  it("does not call the tree up to date after losing a .store entry", async () => {
+  it("does not call the tree up to date after losing a .upm entry", async () => {
     const { store, resolution } = await seed([{ name: "a", files: { "index.js": "a" } }]);
     await linkTree(resolution, { dir: project, store });
     const key = Object.values(await storeKeys(resolution.packages))[0] as string;
-    await rm(join(project, "node_modules", ".store", key), { recursive: true, force: true });
+    await rm(join(project, "node_modules", ".upm", key), { recursive: true, force: true });
 
     const again = await linkTree(resolution, { dir: project, store });
 
     expect(again.upToDate).toBe(false);
-    expect(await exists(join(project, "node_modules", ".store", key, "node_modules", "a"))).toBe(
+    expect(await exists(join(project, "node_modules", ".upm", key, "node_modules", "a"))).toBe(
       true,
     );
   });
@@ -635,10 +623,10 @@ describe("linkTree state", () => {
     const again = await linkTree(resolution, { dir: project, store });
 
     expect(again.upToDate).toBe(false);
-    expect(await linkOf(at)).toContain(".store/");
+    expect(await linkOf(at)).toContain(".upm/");
   });
 
-  it("does not call the tree up to date when a link leads into another project's .store", async () => {
+  it("does not call the tree up to date when a link leads into another project's .upm", async () => {
     const { store, resolution } = await seed([{ name: "a", files: { "index.js": "a" } }]);
     const other = join(dirname(project), "other");
     await mkdir(other, { recursive: true });
@@ -650,7 +638,7 @@ describe("linkTree state", () => {
     // What a moved tree's junction reads back as on Windows: a whole entry, just not ours.
     const theirs = relative(
       dirname(at),
-      join(other, "node_modules", ".store", key, "node_modules", "a"),
+      join(other, "node_modules", ".upm", key, "node_modules", "a"),
     );
     const [to, type] = linkArgs(theirs, at);
     await symlink(to, at, type);
@@ -658,14 +646,14 @@ describe("linkTree state", () => {
     const again = await linkTree(resolution, { dir: project, store });
 
     expect(again.upToDate).toBe(false);
-    expect(await linkOf(at)).toBe(`.store/${key}/node_modules/a`);
+    expect(await linkOf(at)).toBe(`.upm/${key}/node_modules/a`);
   });
 
   it("does not accept a plain file standing in for a store entry", async () => {
     const { store, resolution } = await seed([{ name: "a", files: { "index.js": "a" } }]);
     await linkTree(resolution, { dir: project, store });
     const key = Object.values(await storeKeys(resolution.packages))[0] as string;
-    const at = join(project, "node_modules", ".store", key);
+    const at = join(project, "node_modules", ".upm", key);
     await rm(at, { recursive: true });
     await writeFile(at, "");
 
@@ -703,7 +691,7 @@ describe("linkTree state", () => {
 
     const state = await readState(project);
     expect(state).toMatchObject({
-      version: 2,
+      version: 1,
       hash: await stateHash(resolution, { production: false, store: storeDir }),
       entries: Object.values(await storeKeys(resolution.packages)).sort(),
       store: storeDir,
@@ -718,7 +706,7 @@ describe("linkTree state", () => {
     expect(counted.stat).toEqual([]);
     expect(counted.readdir).toEqual([
       join(project, "node_modules"),
-      join(project, "node_modules", ".store"),
+      join(project, "node_modules", ".upm"),
     ]);
   });
 
@@ -743,7 +731,7 @@ describe("linkTree state", () => {
   it("links in full again when node_modules was thrown away", async () => {
     const { store, resolution } = await seed([{ name: "a", files: { "index.js": "a" } }]);
     await linkTree(resolution, { dir: project, store });
-    await rm(join(project, "node_modules", ".store"), { recursive: true });
+    await rm(join(project, "node_modules", ".upm"), { recursive: true });
 
     const second = await linkTree(resolution, { dir: project, store });
     expect(second).toMatchObject({ upToDate: false, entries: 1 });
@@ -886,7 +874,7 @@ describe("linkTree concurrency", () => {
     expect(await readLink(join(nmDir, "b"))).toBe(
       relative(nmDir, join(await entryNm(resolution, "b@1.0.0"), "b")),
     );
-    expect((await readdir(join(project, "node_modules", ".store"))).sort()).toEqual(
+    expect((await readdir(join(project, "node_modules", ".upm"))).sort()).toEqual(
       Object.values(await storeKeys(resolution.packages)).sort(),
     );
   });
@@ -897,7 +885,7 @@ describe("linkTree concurrency", () => {
     const entry = join(
       project,
       "node_modules",
-      ".store",
+      ".upm",
       (await storeKeys(resolution.packages))["a@1.0.0"] as string,
     );
     const old = new Date(Date.now() - 3 * 60 * 60 * 1000);
@@ -1063,7 +1051,7 @@ describe("linkTree temp sweep", () => {
   it("keeps a fresh temp entry even when its pid is gone", async () => {
     const { store, resolution } = await seed([{ name: "a", files: { "index.js": "a" } }]);
     await linkTree(resolution, { dir: project, store });
-    const fresh = join(project, "node_modules", ".store", `.tmp-${deadPid()}-1`);
+    const fresh = join(project, "node_modules", ".upm", `.tmp-${deadPid()}-1`);
     await mkdir(fresh, { recursive: true });
 
     const second = await linkTree(resolution, { dir: project, store, verify: true });
@@ -1083,7 +1071,7 @@ describe("linkTree temp sweep", () => {
 
 /** A temp entry left over from an install that ran two hours ago. */
 async function staleTemp(name: string): Promise<string> {
-  const at = join(project, "node_modules", ".store", name);
+  const at = join(project, "node_modules", ".upm", name);
   await mkdir(at, { recursive: true });
   const old = new Date(Date.now() - 2 * 60 * 60 * 1000);
   await utimes(at, old, old);
@@ -1104,7 +1092,7 @@ function deadPid(): number {
 
 async function entryNm(resolution: Resolution, id: string): Promise<string> {
   const key = (await storeKeys(resolution.packages))[id] as string;
-  return join(project, "node_modules", ".store", key, "node_modules");
+  return join(project, "node_modules", ".upm", key, "node_modules");
 }
 
 function integrityOf(resolution: Resolution, id: string): string {

@@ -1,4 +1,4 @@
-// Materialize node_modules. One `.store` entry per subgraph key holds the real files,
+// Materialize node_modules. One `.upm` entry per subgraph key holds the real files,
 // hardlinked from the per-file CAS; everything else is a relative symlink. IDEA.md 5.4.
 import { builtin } from "./builtin.ts";
 import { storeKeys } from "./keys.ts";
@@ -27,7 +27,7 @@ export interface LinkOptions {
   hash?: string;
   /**
    * Asked once, for a pool of worker threads to build the entries on, with a count of the
-   * files in the entries `.store` does not hold yet — a function, since counting means
+   * files in the entries `.upm` does not hold yet — a function, since counting means
    * reading every index, which a caller with a pool already up need not have done. Nothing
    * means every entry is built here, as without a pool.
    */
@@ -121,7 +121,7 @@ interface Entry {
   bytes: number;
   /** The index, read on first use; an entry the pool builds from the index path never reads it here. */
   readonly index: PackageIndex;
-  /** `<key>/node_modules/<name>`: where the package sits under `.store`. */
+  /** `<key>/node_modules/<name>`: where the package sits under `.upm`. */
   home: string;
 }
 
@@ -175,7 +175,7 @@ export async function linkTree(resolution: Resolution, options: LinkOptions): Pr
   const { copyFileSync, linkSync } = builtin.fs;
   const up = `..${sep}`;
   const limit = createLimiter(options.concurrency ?? 16);
-  const storeDir = join(options.dir, "node_modules", ".store");
+  const storeDir = join(options.dir, "node_modules", ".upm");
   const production = options.production === true;
   const hash = options.hash ?? (await stateHash(resolution, { production, store: store.dir }));
   const result: LinkResult = {
@@ -201,7 +201,7 @@ export async function linkTree(resolution: Resolution, options: LinkOptions): Pr
   let rootBins: string[] = [];
   const { inputs } = options;
   const stateOf = (entries: string[], complete: boolean, root: RootLinks): InstallState => ({
-    version: 2,
+    version: 1,
     hash,
     entries,
     complete,
@@ -270,11 +270,11 @@ export async function linkTree(resolution: Resolution, options: LinkOptions): Pr
   const blobDir = join(store.dir, "files");
 
   await mkdir(storeDir, { recursive: true });
-  // One listing in place of a stat per entry. A warm install has just made `.store`, and each
+  // One listing in place of a stat per entry. A warm install has just made `.upm`, and each
   // of nuxt's 561 probes for a name that was not there cost a rejection and a wait on the
   // directory lock the pool's renames hold. A key that appears later is caught by the rename.
   const present = new Set(await readdir(storeDir));
-  // The files the pool would link: those of the entries not in `.store` yet. An entry that is
+  // The files the pool would link: those of the entries not in `.upm` yet. An entry that is
   // there but damaged is rebuilt too, but only its stats can tell, and they cost more than the
   // pool would save on a repair. A stale state file over an intact store — the install after
   // `add` — has a few new entries, not the tree's 13,575 files.
@@ -283,7 +283,7 @@ export async function linkTree(resolution: Resolution, options: LinkOptions): Pr
   // one drops it the way a missing one does; a required one is read where it is linked, and
   // torn there fails the link, which the install answers by filling the store again.
   const fates = new Map<string, Promise<void>>();
-  // Files landed so far that `.store` lacks, under a filling store: their indexes were just
+  // Files landed so far that `.upm` lacks, under a filling store: their indexes were just
   // written, so reading one is a memo lookup. On a full store the count is taken only when the
   // pool asks for it, since it reads every index and a pool started off the lockfile never asks.
   let landed = 0;
@@ -379,7 +379,7 @@ export async function linkTree(resolution: Resolution, options: LinkOptions): Pr
   }
 
   /**
-   * A dep link's target. Every entry sits at the same depth under `.store`, so from
+   * A dep link's target. Every entry sits at the same depth under `.upm`, so from
    * `<entry>/node_modules` it is always `../../<home>`, one `..` more from under a scope dir.
    * Spelled rather than `relative(dirname(at), realDir(dep))`, which resolved both sides
    * against the cwd once per edge: 1,359 times on nuxt, 15 ms of `node:path` in `build`.
@@ -393,7 +393,7 @@ export async function linkTree(resolution: Resolution, options: LinkOptions): Pr
     const out: [string, Entry][] = [];
     for (const [name, version] of Object.entries(allDeps(pkg))) {
       const id = `${name}@${version}`;
-      // Only the root and workspaces reach a workspace, so no entry links out of `.store`.
+      // Only the root and workspaces reach a workspace, so no entry links out of `.upm`.
       if (resolution.packages[id]?.local !== undefined) {
         throw fail(`${pkg.name}@${pkg.version} depends on the workspace ${name}`, "ELINK");
       }
@@ -843,7 +843,7 @@ export async function linkTree(resolution: Resolution, options: LinkOptions): Pr
 
   /**
    * Only direct deps get a top-level name: a package may import just what it declared. A
-   * registry dep links into `.store`; a workspace dep links to the workspace's own directory,
+   * registry dep links into `.upm`; a workspace dep links to the workspace's own directory,
    * `packages/a/node_modules/b -> ../../b`. Its bins go through that link like any other's.
    */
   async function linkTop({ nm, dependencies }: Top): Promise<void> {
@@ -877,7 +877,7 @@ export async function linkTree(resolution: Resolution, options: LinkOptions): Pr
 
   /**
    * Converge one `node_modules` (or `.bin`) to what we just linked: every symlink `keep` does
-   * not name goes. Only symlinks — a real directory is someone else's, and `.store`, `.tmp-*`
+   * not name goes. Only symlinks — a real directory is someone else's, and `.upm`, `.tmp-*`
    * and any other dot name are not ours to judge. Runs after the links are in place, so a
    * concurrent install of the same resolution can only ever see names both of us want.
    * A Windows `.bin` holds shims, which are files: those not kept go too.
@@ -951,7 +951,7 @@ type RootLinks = NonNullable<InstallState["root"]>;
 /**
  * Is the tree a state file with `root` describes still on disk? The same shape `standing`
  * checks, read off the state alone: every recorded root link pointing where it was made to,
- * every recorded bin placed, every recorded entry a directory under `.store`. For the install
+ * every recorded bin placed, every recorded entry a directory under `.upm`. For the install
  * whose inputs have not changed, which has no graph to check against.
  */
 export function treeStanding(dir: string, state: InstallState): boolean {
@@ -977,7 +977,7 @@ export function treeStanding(dir: string, state: InstallState): boolean {
   }
   let found: import("node:fs").Dirent[];
   try {
-    found = readdirSync(join(nm, ".store"), { withFileTypes: true });
+    found = readdirSync(join(nm, ".upm"), { withFileTypes: true });
   } catch {
     return false;
   }
@@ -1025,10 +1025,10 @@ async function standingTop(
     if (pkg?.local !== undefined) {
       if (to !== relative(dirname(join(nm, name)), join(dir, pkg.local))) return undefined;
     } else {
-      // Anchored to this project's own `.store`: a junction is absolute, so a moved tree still
-      // leads into the `.store` it was installed from.
+      // Anchored to this project's own `.upm`: a junction is absolute, so a moved tree still
+      // leads into the `.upm` it was installed from.
       const at = join(nm, name);
-      const store = relative(dirname(at), join(dir, "node_modules", ".store")) + sep;
+      const store = relative(dirname(at), join(dir, "node_modules", ".upm")) + sep;
       if (!to.startsWith(store) || !to.endsWith(join(sep, "node_modules", name))) return undefined;
     }
     read.links[name] = to;

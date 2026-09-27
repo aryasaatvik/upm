@@ -36,7 +36,7 @@ Once the resolve is in, upm's own `install` runs in the tab: `src/lib/node.ts` p
 `process` in place whose `getBuiltinModule` hands out an in-memory `fs`, a posix `path` and
 `os`, and nothing else — hashing and gunzip stay WebCrypto and `DecompressionStream`, and with no
 `worker_threads` every pool runs on the one thread. The Explorer then shows the project
-(`node_modules/.store`, the links, `upm.lock`) and the content store. The platform is Linux x64
+(`node_modules/.upm`, the links, `upm.lock`) and the content store. The platform is Linux x64
 with glibc, so the optional native builds are the ones such a machine would get.
 
 The `fs` lives in memory, since upm's sync calls cannot wait for OPFS, and the project is made

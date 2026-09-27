@@ -798,12 +798,7 @@ describe("exec", () => {
       expect(requests.some((url) => url.startsWith("/lib"))).toBe(false);
       const [project] = await readdir(join(dir, "home", ".upm", "exec"));
       const installed = join(dir, "home", ".upm", "exec", project!, "node_modules");
-      expect((await readdir(installed)).sort()).toEqual([
-        ".bin",
-        ".store",
-        ".upm-state.json",
-        "hi",
-      ]);
+      expect((await readdir(installed)).sort()).toEqual([".bin", ".upm", ".upm.json", "hi"]);
       expect(await readdir(work)).not.toContain("node_modules");
 
       // The same versions from another registry are another project, and that registry is asked.
@@ -828,7 +823,7 @@ describe("exec", () => {
     },
   );
 
-  it("installs under the root's node_modules/.upm/exec, which its install leaves alone", async () => {
+  it("installs under the root's node_modules/.upm/.exec, which its install leaves alone", async () => {
     const work = join(dir, "work");
     const manifest = { workspaces: ["packages/*"], dependencies: { lib: "1" } };
     await writeFile(join(work, "package.json"), JSON.stringify(manifest));
@@ -840,7 +835,7 @@ describe("exec", () => {
     const flags = ["--store", join(dir, "store"), "--registry", registry];
     const first = await upm(CLI, ["exec", "hi@1.0.0"], {}, flags, inside);
     expect(ran(first)).toMatchObject({ at: "hi@1.0.0", cwd: inside });
-    const projects = await readdir(join(work, "node_modules", ".upm", "exec"));
+    const projects = await readdir(join(work, "node_modules", ".upm", ".exec"));
     expect(projects).toHaveLength(1);
     await expect(readdir(join(dir, "home", ".upm", "exec"))).rejects.toMatchObject({
       code: "ENOENT",
@@ -849,7 +844,7 @@ describe("exec", () => {
 
     const install = await upm(CLI, ["install"], {}, ["--dir", work, ...flags]);
     expect(install.code).toBe(0);
-    expect(await readdir(join(work, "node_modules", ".upm", "exec"))).toEqual(projects);
+    expect(await readdir(join(work, "node_modules", ".upm", ".exec"))).toEqual(projects);
     requests = [];
     expect(ran(await upm(CLI, ["exec", "hi@1.0.0"], {}, flags, inside)).at).toBe("hi@1.0.0");
     expect(requests).toEqual([]);

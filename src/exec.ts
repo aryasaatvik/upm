@@ -9,14 +9,15 @@ import { parseSpec } from "./spec.ts";
 import type { Spec } from "./spec.ts";
 
 /**
- * Where exec installs for the project at `root`: its `node_modules/.upm/exec`, so the packages
+ * Where exec installs for the project at `root`: its `node_modules/.upm/.exec`, so the packages
  * go with that tree and can import what the project installed, or `~/.upm/exec` when it has none.
  */
 export function execHome(root: string): string {
   const { join } = builtin.path;
   const tree = builtin.fs.statSync(join(root, "node_modules"), { throwIfNoEntry: false });
   if (tree?.isDirectory() && builtin.fs.existsSync(join(root, "package.json"))) {
-    return join(root, "node_modules", ".upm", "exec");
+    // Dotted: the sweep of `.upm` entries leaves it alone.
+    return join(root, "node_modules", ".upm", ".exec");
   }
   return join(builtin.os.homedir(), ".upm", "exec");
 }

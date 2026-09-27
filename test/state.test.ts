@@ -120,7 +120,7 @@ describe("readState", () => {
 
   it("round-trips what writeState wrote", async () => {
     const state = {
-      version: 2 as const,
+      version: 1 as const,
       hash: "abc",
       entries: ["a@1.0.0-x"],
       complete: true,
@@ -132,7 +132,7 @@ describe("readState", () => {
   });
 
   it("refuses a state whose inputs come without the summary and links they stand for", async () => {
-    const state = { version: 2, hash: "a", entries: [], complete: true, store: STORE };
+    const state = { version: 1, hash: "a", entries: [], complete: true, store: STORE };
     await put(JSON.stringify({ ...state, inputs: "x" }));
     expect(await readState(project)).toBeUndefined();
     const whole = {
@@ -148,7 +148,7 @@ describe("readState", () => {
   });
 
   it("reads the local tarballs' stamps, and refuses any that is not one", async () => {
-    const state = { version: 2, hash: "a", entries: [], complete: true, store: STORE };
+    const state = { version: 1, hash: "a", entries: [], complete: true, store: STORE };
     const stamp = ["1", "2", "3", "4"];
     const tarballs = { "file:a.tgz": stamp, "file:b.tgz": null };
     await put(JSON.stringify({ ...state, tarballs }));
@@ -161,7 +161,7 @@ describe("readState", () => {
 
   it("is undefined when the file predates the complete flag", async () => {
     // An older state cannot say whether its tree was whole, so it must not be trusted.
-    await put(JSON.stringify({ version: 2, hash: "a", entries: [], store: STORE }));
+    await put(JSON.stringify({ version: 1, hash: "a", entries: [], store: STORE }));
     expect(await readState(project)).toBeUndefined();
   });
 
@@ -195,21 +195,21 @@ describe("readState", () => {
 
 describe("writeState", () => {
   it("creates node_modules and leaves no temp file behind", async () => {
-    await writeState(project, { version: 2, hash: "h", entries: [], complete: true, store: STORE });
+    await writeState(project, { version: 1, hash: "h", entries: [], complete: true, store: STORE });
     const found = await readdir(join(project, "node_modules"));
     expect(found).toEqual([STATE_FILE]);
   });
 
   it("replaces an existing state in one step", async () => {
     await writeState(project, {
-      version: 2,
+      version: 1,
       hash: "one",
       entries: [],
       complete: true,
       store: STORE,
     });
     await writeState(project, {
-      version: 2,
+      version: 1,
       hash: "two",
       entries: ["k"],
       complete: true,
@@ -221,7 +221,7 @@ describe("writeState", () => {
 
   it("is readable as JSON on disk", async () => {
     await writeState(project, {
-      version: 2,
+      version: 1,
       hash: "h",
       entries: ["k"],
       complete: true,
@@ -234,14 +234,14 @@ describe("writeState", () => {
     await mkdir(join(project, "node_modules"), { recursive: true });
     await mkdir(statePath(project), { recursive: true });
     await expect(
-      writeState(project, { version: 2, hash: "h", entries: [], complete: true, store: STORE }),
+      writeState(project, { version: 1, hash: "h", entries: [], complete: true, store: STORE }),
     ).rejects.toMatchObject({ code: "ESTATE" });
   });
 });
 
 describe("clearState", () => {
   it("removes the file", async () => {
-    await writeState(project, { version: 2, hash: "h", entries: [], complete: true, store: STORE });
+    await writeState(project, { version: 1, hash: "h", entries: [], complete: true, store: STORE });
     await clearState(project);
     expect(await readState(project)).toBeUndefined();
   });

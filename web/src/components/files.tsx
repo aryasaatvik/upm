@@ -17,7 +17,7 @@ export function treePath(name: string, path = "") {
 }
 
 /**
- * The project's files, each package's once: an opened link shows the `.store` copy it points
+ * The project's files, each package's once: an opened link shows the `.upm` copy it points
  * to. Symlinks count apart, with no bytes. And the store's apart, which holds every install's
  * content, not only this one's.
  */
@@ -377,7 +377,7 @@ function Tree(props: {
   );
 }
 
-// A `.store` entry, `<name>@<version>-<hash>`: the 22-char hash is grayed out.
+// A `.upm` entry, `<name>@<version>-<hash>`: the 22-char hash is grayed out.
 const STORE_ENTRY = /^(.+@.+)(-[\w-]{22})$/;
 
 function StoreName({ name }: { name: string }) {

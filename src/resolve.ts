@@ -1,5 +1,5 @@
 // Walk a root package.json into a flat, deterministic set of `name@version` packages.
-// No hoisting and no placement: the stage 5 `.store` layout makes both unnecessary.
+// No hoisting and no placement: the stage 5 `.upm` layout makes both unnecessary.
 import { normalizeBin } from "./normalize-bin.ts";
 import { builtin } from "./builtin.ts";
 import { maxSatisfying, parse, satisfies, validRange } from "./semver.ts";
@@ -19,7 +19,7 @@ export interface ResolvedPackage {
   resolved: string;
   integrity: string;
   /**
-   * A workspace, at this root-relative `/` path. Linked from its directory, never in `.store`.
+   * A workspace, at this root-relative `/` path. Linked from its directory, never in `.upm`.
    * Its key is `name@link:<path>` and an edge to it carries `link:<path>` as the version, so
    * it never shares an identity with a registry package of the same name and version.
    */
@@ -126,7 +126,7 @@ export interface ResolveOptions {
   /**
    * The workspaces under the root, each a top like it: walked in full, and where an edge from
    * the root or another workspace lands when a `workspace:` spec or a plain range fits its
-   * name and version. Never from a registry package, so no `.store` entry links out to one.
+   * name and version. Never from a registry package, so no `.upm` entry links out to one.
    * Read from disk every resolve, never from the lock.
    */
   workspaces?: { path: string; manifest: RootManifest }[];
@@ -368,7 +368,7 @@ export async function resolveTree(
    * range or version takes a workspace of that name when its version fits, as npm does; when
    * it does not, the registry answers, and the mismatch is said once. A tag or an alias never
    * names a workspace. Only the root and workspaces look here: a registry package's edge
-   * goes to the registry, so no `.store` entry links out to a workspace.
+   * goes to the registry, so no `.upm` entry links out to a workspace.
    */
   function localFor(spec: Spec, from: string): ResolvedPackage | undefined {
     const found = local.get(spec.fetchName);
@@ -795,7 +795,7 @@ function present(deps: Record<string, string>, keep: Set<string>): Record<string
 /**
  * An optional peer is never a reason to install anything, but if the tree already holds a
  * version that satisfies it, the consumer should still see it — otherwise the feature it
- * guards can never switch on inside a `.store` entry.
+ * guards can never switch on inside a `.upm` entry.
  *
  * A shipped consumer only sees shipped versions: a devDependency is not worth promoting into
  * production for a feature that is allowed to stay off.

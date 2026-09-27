@@ -391,7 +391,7 @@ directory, and a version or range uses an installed package that matches it. A t
 such as `@latest` always asks the registry.
 
 Otherwise upm installs the package into its own project, linked from the shared
-store: under `node_modules/.upm/exec` of the project root, so it is removed with that
+store: under `node_modules/.upm/.exec` of the project root, so it is removed with that
 `node_modules` and can import what the project installed, or under `~/.upm/exec`
 when the root has no `node_modules`. It runs the package's only command (or one file
 with several names), or the one named after the package. Use `-p` when a package has
@@ -516,7 +516,7 @@ upm run --workspaces --include-workspace-root build
   `run -w` and `run --workspaces`.
 - Only the root's `.npmrc` is used for the workspace tree.
 
-The root has one `node_modules/.store` for registry packages. Each workspace has
+The root has one `node_modules/.upm` for registry packages. Each workspace has
 its own dependency links and `.bin` directory. The root only gets a link to a
 workspace if it declares that dependency. Workspace paths and links are recorded
 in `upm.lock`. Workspace or `node_modules` symlinks that lead outside the project
@@ -639,7 +639,7 @@ The shared file cache lives at `~/.upm/store`. Change it with `UPM_STORE` or
 `--store <path>`; the command-line option takes priority.
 
 Files are stored by content and hardlinked into each project's
-`node_modules/.store`. Hardlinks let projects share the same bytes on disk. upm
+`node_modules/.upm`. Hardlinks let projects share the same bytes on disk. upm
 falls back to copying when hardlinks are not available, such as across filesystems.
 
 **Do not edit installed package files.** Cached files are read-only because a write

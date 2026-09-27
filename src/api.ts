@@ -164,7 +164,7 @@ export interface StoreAccess {
 export interface Experimental {
   /** Threads that read the registry, 0 to 16; 0 reads it on this thread. Default: by cores. */
   resolvePool?: number;
-  /** Worker threads that build `.store` entries, and when they are worth starting. */
+  /** Worker threads that build `.upm` entries, and when they are worth starting. */
   linkPool?: Partial<LinkPoolConfig>;
 }
 
@@ -322,7 +322,7 @@ export interface Fetched {
 }
 
 export interface PruneResult {
-  /** This project's stale `.store` entries; undefined without an install state to trust. */
+  /** This project's stale `.upm` entries; undefined without an install state to trust. */
   entries?: { removed: number; bytes: number };
   /** Store content no index references. */
   content: { files: number; packages: number; bytes: number };

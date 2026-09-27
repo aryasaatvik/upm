@@ -214,7 +214,7 @@ function Welcome({ examples, onRun }: { examples: string[]; onRun: (spec: string
           <li>Every registry request shows in the Requests panel.</li>
           <li>
             Then upm's own install runs here, into an in-memory filesystem, and the Explorer shows
-            the project it made: the <code className="font-mono text-xs">.store</code> layout, the
+            the project it made: the <code className="font-mono text-xs">.upm</code> layout, the
             links and the content store.
           </li>
         </ul>

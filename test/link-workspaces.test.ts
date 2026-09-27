@@ -1,5 +1,5 @@
 // The linker over a tree with workspaces: every workspace is a top with a `node_modules` of its
-// own, linked from its directory and never placed in `.store`.
+// own, linked from its directory and never placed in `.upm`.
 import {
   lstat,
   mkdir,
@@ -105,7 +105,7 @@ describe("linkTree with workspaces", () => {
 
     expect(result.entries).toBe(1);
     expect(await linkOf(join(nm, "nanoid"))).toBe(
-      `../../../node_modules/.store/${keys["nanoid@1.0.0"]}/node_modules/nanoid`,
+      `../../../node_modules/.upm/${keys["nanoid@1.0.0"]}/node_modules/nanoid`,
     );
     expect(await linkOf(join(nm, "b"))).toBe("../../b");
     expect(await read(join(nm, "b", "package.json"))).toContain('"name":"b"');
@@ -119,7 +119,7 @@ describe("linkTree with workspaces", () => {
     expect(await exists(join(project, "node_modules", "b"))).toBe(false);
     // And a workspace is never a store entry.
     expect(Object.keys(keys)).toEqual(["nanoid@1.0.0"]);
-    expect(await exists(join(project, "node_modules", ".store", "b@1.0.0"))).toBe(false);
+    expect(await exists(join(project, "node_modules", ".upm", "b@1.0.0"))).toBe(false);
   });
 
   it("links a workspace at the root only when the root declares it", async () => {
@@ -148,7 +148,7 @@ describe("linkTree with workspaces", () => {
       join(project, "packages", "a", "node_modules"),
       join(project, "packages", "a", "node_modules", ".bin"),
       join(project, "packages", "b", "node_modules"),
-      join(project, "node_modules", ".store"),
+      join(project, "node_modules", ".upm"),
     ]);
   });
 

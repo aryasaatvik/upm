@@ -59,7 +59,7 @@ describe("sweepEntries", () => {
     expect(await entries()).toEqual([".tmp-1234-0"]);
   });
 
-  it("is a no-op when the project has no .store yet", async () => {
+  it("is a no-op when the project has no .upm yet", async () => {
     expect(await sweepEntries(project, new Set())).toEqual({ removed: 0, bytes: 0 });
   });
 
@@ -294,10 +294,10 @@ async function ageAll(at: string): Promise<void> {
   }
 }
 
-/** One `.store` entry in the project, with real files under its package directory. */
+/** One `.upm` entry in the project, with real files under its package directory. */
 /** `fresh` keeps the entry inside the grace period, where the sweep must leave it alone. */
 async function entry(key: string, files: Record<string, string>, fresh = false): Promise<string> {
-  const at = join(project, "node_modules", ".store", key);
+  const at = join(project, "node_modules", ".upm", key);
   await mkdir(join(at, "node_modules", "pkg"), { recursive: true });
   for (const [path, data] of Object.entries(files)) {
     await writeFile(join(at, "node_modules", "pkg", path), data);
@@ -307,7 +307,7 @@ async function entry(key: string, files: Record<string, string>, fresh = false):
 }
 
 async function entries(): Promise<string[]> {
-  return (await readdir(join(project, "node_modules", ".store"))).sort();
+  return (await readdir(join(project, "node_modules", ".upm"))).sort();
 }
 
 async function exists(path: string): Promise<boolean> {

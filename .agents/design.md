@@ -38,7 +38,7 @@ A workspace's identity is `name@link:<path>`, so it can never collide with a reg
 `name@version` in the lockfile, the store or a consumer's key. In its consumer's key it
 is a leaf: its own dependencies never move a consumer's store entry, only the links in
 the workspace's own `node_modules`. Edges to a workspace come from the root or another
-workspace only. A `.store` entry never links to one, which is what keeps `.store`
+workspace only. A `.upm` entry never links to one, which is what keeps `.upm`
 self-contained and portable across projects; keep that even where npm would link the
 workspace into a registry package. The root's `.npmrc` is the only one read, or two
 workspaces could install one lockfile two ways.
@@ -82,7 +82,7 @@ The install state carries two levels of evidence. Its `hash` describes the resol
 compared with one computed from the lockfile; its `inputs` describe what that resolution was
 computed from (lockfile bytes, root manifest, store, registry hosts, platform, flags), and an
 install whose inputs match checks only what the state recorded — the root's links and bins,
-the `.store` entry names — without reading the graph. Both trust the state's `entries` and
+the `.upm` entry names — without reading the graph. Both trust the state's `entries` and
 `root` for _which_ names to look for; neither reads a file's bytes. Anything that changes
 what a resolution is a function of (a new `.npmrc` key that changes hosts, say) must be added
 to the inputs (`inputsOf` in `src/api.ts`), or the short check lies.

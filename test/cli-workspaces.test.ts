@@ -242,7 +242,7 @@ describe("add and remove", () => {
     expect((await manifest("")).dependencies).toEqual({ nanoid: "^5.0.0" });
     // Through the root's store either way; `b` links it from its own directory.
     expect(await linkOf(join(dir, "packages", "b", "node_modules", "nanoid"))).toMatch(
-      /^\.\.\/\.\.\/\.\.\/node_modules\/\.store\//,
+      /^\.\.\/\.\.\/\.\.\/node_modules\/\.upm\//,
     );
   });
 

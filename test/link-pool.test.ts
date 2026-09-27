@@ -122,7 +122,7 @@ describe("link pool", () => {
     expect(result).toMatchObject({ entries: 3, pooled: 0, linked: 10 });
   });
 
-  it("counts only the files of entries .store does not hold yet", async () => {
+  it("counts only the files of entries .upm does not hold yet", async () => {
     const { store, resolution } = await seed(TREE);
     const dir = join(root, "p");
     const counts: number[] = [];
@@ -163,7 +163,7 @@ describe("link pool", () => {
       code: "ELINK",
       message: expect.stringContaining("cannot link"),
     });
-    const entries = await readdir(join(dir, "node_modules", ".store"));
+    const entries = await readdir(join(dir, "node_modules", ".upm"));
     expect(entries.filter((name) => name.startsWith(".tmp-"))).toEqual([]);
   });
 
@@ -548,7 +548,7 @@ function bigFiles(): Record<string, string> {
 }
 
 async function temps(dir: string): Promise<string[]> {
-  const names = await readdir(join(dir, "node_modules", ".store"));
+  const names = await readdir(join(dir, "node_modules", ".upm"));
   return names.filter((name) => name.startsWith(".tmp-"));
 }
 
@@ -558,7 +558,7 @@ async function snapshot(dir: string): Promise<Record<string, string>> {
   const nm = join(dir, "node_modules");
   async function walk(at: string, rel: string): Promise<void> {
     for (const name of (await readdir(at)).sort()) {
-      if (name === ".upm-state.json") continue;
+      if (name === ".upm.json") continue;
       const path = join(at, name);
       const key = rel ? `${rel}/${name}` : name;
       const info = await lstat(path);
