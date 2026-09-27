@@ -1,7 +1,7 @@
 // Read-only npm registry client: packuments and single manifests, memoized per request.
 import { fetching } from "./dns.ts";
 import { createAdaptiveLimiter, isThrottle, retryAfter } from "./limit.ts";
-import { asOf, viewOf as parsedView } from "./pick.ts";
+import { asOf, pickManifest, viewOf as parsedView } from "./pick.ts";
 import type { PackumentView, PickOptions } from "./pick.ts";
 import { pluckModified, pluckTags, pluckTimes, pluckVersion } from "./pluck.ts";
 import { concat, sleep } from "./runtime.ts";
@@ -73,6 +73,42 @@ export interface RegistryOptions {
   before?: number;
   /** `min-release-age-exclude`: names, or globs with `*`, `**` and `?`, never filtered. */
   exclude?: string[];
+  /** Documents kept from earlier runs. None by default; `src/metadata.ts` keeps them on disk. */
+  cache?: DocumentCache;
+}
+
+/**
+ * When a kept document answers without asking the registry. `revalidate`: while the registry's
+ * `max-age` lasts, or while it was read after `before` (pnpm's release-age window), then asked
+ * with its ETag. `prefer`: whenever there is one. `only`: whenever there is one, and nothing is
+ * ever asked. A pick a document answered unasked cannot satisfy asks once, in any mode but
+ * `only`; under `revalidate`, so does a pick of a tag written out.
+ */
+export type CacheMode = "revalidate" | "prefer" | "only";
+
+export interface Kept {
+  bytes: Uint8Array;
+  etag?: string;
+  /**
+   * When the registry's copy was current, in epoch ms: when it last sent the document or said
+   * it had not changed, less the `age` a cache in front of it gave.
+   */
+  at: number;
+  /** Seconds it stays fresh from `at`, as the registry said. */
+  maxAge?: number;
+}
+
+/**
+ * Documents by url and media type. Synchronous: see `src/metadata.ts`. A full packument may
+ * come back cut to the fields the resolver reads.
+ */
+export interface DocumentCache {
+  mode: CacheMode;
+  get(key: string): Kept | undefined;
+  /** `at` as `Kept` has it. */
+  set(key: string, bytes: Uint8Array, at: number, etag?: string, maxAge?: number): void;
+  /** The registry said it has not changed: current as of `at`. */
+  touch(key: string, at: number): void;
 }
 
 export interface Registry {
@@ -97,8 +133,9 @@ export interface Registry {
    */
   pinned(name: string, version: string): Promise<Manifest | undefined>;
   /**
-   * The walk's pick in one call, for a registry that can do it nearer the bytes: `pinned` first
-   * when there is a version to try, then the usual pick. Without it the two are asked in turn.
+   * The walk's pick in one call: `pinned` first when there is a version to try, then the usual
+   * pick. Without it the two are asked in turn. The client's own asks the registry again when
+   * a document kept from an earlier run cannot satisfy the spec.
    */
   pick?(spec: Spec, pinned?: string, options?: PickOptions): Promise<Manifest>;
 }
@@ -178,9 +215,59 @@ export function createRegistry(options: RegistryOptions = {}): Registry {
   const times = new Map<string, Promise<Record<string, string> | undefined>>();
   const before = options.before;
   const excluded = globs(options.exclude ?? []);
+  const cache = options.cache;
+  /** Names answered from a kept document without asking; and those asked about since. */
+  const unasked = new Set<string>();
+  const rechecked = new Set<string>();
+  /** Requests a kept document answered unasked in this run, by key. */
+  const served = new Set<string>();
+
+  /**
+   * The kept document for a request, and whether it answers without one. When it does not, its
+   * ETag goes with the request. A full document answers for the abbreviated one: it has every
+   * field the other has.
+   */
+  function kept(name: string, url: string, accept: string): Found {
+    if (!cache) return { use: false };
+    const doc = cache.get(keyOf(url, accept));
+    if (rechecked.has(name)) return { doc, use: false };
+    const full = !doc && accept === CORGI ? cache.get(keyOf(url, FULL)) : undefined;
+    const found = doc ?? full;
+    if (!found || !current(name, found)) return { doc, use: false };
+    // Fresh or not, it may predate a publish: `pick` asks once when it falls short.
+    unasked.add(name);
+    return { doc: found, use: true, full: full !== undefined };
+  }
+
+  /** Whether a kept document answers unasked, as `CacheMode` says. */
+  function current(name: string, doc: Kept): boolean {
+    if (cache!.mode !== "revalidate") return true;
+    if (doc.maxAge !== undefined && Date.now() - doc.at < doc.maxAge * 1000) return true;
+    // Read since the cutoff, it has every version a pick may see: none newer is eligible.
+    return before !== undefined && doc.at >= before && !excluded(name);
+  }
+
+  const offline = (name: string) =>
+    fail(`offline: cannot ask the registry for ${name}`, "EOFFLINE");
+
+  /** Keep what the registry sent, unless it said not to. */
+  function keep(url: string, accept: string, response: Response, bytes: Uint8Array): void {
+    const control = response.headers.get("cache-control") ?? "";
+    if (!cache || /no-store/i.test(control)) return;
+    const maxAge = /max-age=(\d+)/i.exec(control)?.[1];
+    const etag = response.headers.get("etag") ?? undefined;
+    const age = maxAge === undefined ? undefined : +maxAge;
+    cache.set(keyOf(url, accept), bytes, currentAt(response), etag, age);
+  }
 
   /** The response body, retried and validated as `get` says. */
-  async function get(name: string, url: string, accept: string): Promise<Uint8Array> {
+  async function get(name: string, url: string, accept: string, ask = false): Promise<Uint8Array> {
+    const { doc, use } = kept(name, url, accept);
+    if (use && !ask) {
+      served.add(keyOf(url, accept));
+      return doc!.bytes;
+    }
+    if (cache?.mode === "only") throw offline(name);
     return await limit(async (signal) => {
       let last: unknown;
       // What the last answer asked us to wait, which beats guessing when the server said.
@@ -190,7 +277,7 @@ export function createRegistry(options: RegistryOptions = {}): Registry {
         let response: Response;
         try {
           response = await request(url, {
-            headers: headers(url, accept),
+            headers: headers(url, accept, doc?.etag),
             // Without this one dead socket hangs the whole install.
             signal: AbortSignal.timeout(TIMEOUT),
           });
@@ -205,7 +292,15 @@ export function createRegistry(options: RegistryOptions = {}): Registry {
           );
           continue;
         }
-        if (response.ok) return await body(response, url);
+        if (response.status === 304 && doc) {
+          cache!.touch(keyOf(url, accept), currentAt(response));
+          return doc.bytes;
+        }
+        if (response.ok) {
+          const bytes = await body(response, url);
+          keep(url, accept, response, bytes);
+          return bytes;
+        }
         if (response.status === 404) {
           throw fail(`Package "${name}" not found in registry`, "E404");
         }
@@ -225,9 +320,11 @@ export function createRegistry(options: RegistryOptions = {}): Registry {
   // parseDep validates the name and gives the escaped registry path form.
   const path = (name: string) => `${baseFor(name)}/${parseDep(name, "").escapedName}`;
 
-  function headers(url: string, accept: string): Record<string, string> {
+  function headers(url: string, accept: string, etag?: string): Record<string, string> {
     const authorization = authFor(auth, url);
-    return authorization ? { accept, authorization } : { accept };
+    const sent: Record<string, string> = authorization ? { accept, authorization } : { accept };
+    if (etag) sent["if-none-match"] = etag;
+    return sent;
   }
 
   async function loadPackument(name: string): Promise<TextView> {
@@ -251,14 +348,23 @@ export function createRegistry(options: RegistryOptions = {}): Registry {
     name: string,
     accept: string,
     big?: () => void,
+    found?: Found,
   ): Promise<TextView | undefined> {
+    const url = path(name);
+    const { doc, use, full } = found ?? kept(name, url, accept);
+    const hit = () => {
+      if (accept === CORGI && !full) corgiBytes.set(name, doc!.bytes.byteLength);
+      return viewOf(url, doc!.bytes);
+    };
+    if (use) return hit();
+    if (cache?.mode === "only") return undefined;
     return await limit(async (signal) => {
       let response: Response;
       // Not from a gate the registry has pulled back: it asked for fewer.
       const late = big && limit.limit >= start ? setTimeout(big, LATE_MS) : undefined;
       try {
-        response = await request(path(name), {
-          headers: headers(path(name), accept),
+        response = await request(url, {
+          headers: headers(url, accept, doc?.etag),
           signal: AbortSignal.timeout(TIMEOUT),
         });
       } catch (error) {
@@ -267,11 +373,17 @@ export function createRegistry(options: RegistryOptions = {}): Registry {
       } finally {
         clearTimeout(late);
       }
+      if (response.status === 304 && doc) {
+        cache!.touch(keyOf(url, accept), currentAt(response));
+        return hit();
+      }
       if (!response.ok && isThrottle(response.status)) signal.throttled();
       if (!response.ok || !response.body) return undefined;
       const [bytes, size] = await read(response, big);
       if (accept === CORGI) corgiBytes.set(name, size);
-      return bytes === undefined ? undefined : viewOf(path(name), bytes);
+      if (bytes === undefined) return undefined;
+      keep(url, accept, response, bytes);
+      return viewOf(url, bytes);
     });
   }
 
@@ -315,6 +427,14 @@ export function createRegistry(options: RegistryOptions = {}): Registry {
   }
 
   async function loadPinned(name: string, version: string): Promise<Manifest | undefined> {
+    // A document that answers unasked beats any route. One that does not is read only once.
+    const ready = cache && !peeks.has(name) ? kept(name, path(name), CORGI) : undefined;
+    if (ready?.use) {
+      const found = (await memo(peeks, name, () => peek(name, CORGI, undefined, ready)))?.version(
+        version,
+      );
+      if (found) return found;
+    }
     // A document a range asked for has the version, or the route below is right.
     const known = corgis.get(name) ?? peeks.get(name);
     if (known) {
@@ -327,7 +447,7 @@ export function createRegistry(options: RegistryOptions = {}): Registry {
       if (found) return found;
     }
     const found = await raced(name, version, (early) =>
-      memo(peeks, name, () => peek(name, CORGI, early)),
+      memo(peeks, name, () => peek(name, CORGI, early, ready)),
     );
     if (found || first) return found;
     // A version the CDN's copy lacks may be newer than the copy: the route is the origin.
@@ -357,7 +477,9 @@ export function createRegistry(options: RegistryOptions = {}): Registry {
     } catch (error) {
       // No such version, or a registry that does not serve the per-version route at all.
       const { code, status } = error as { code?: string; status?: number };
-      const missing = code === "E404" || (code === "EREGISTRY" && (status ?? 500) < 500);
+      // Offline, a route never kept is a miss: a kept document may still have the version.
+      const missing =
+        code === "E404" || code === "EOFFLINE" || (code === "EREGISTRY" && (status ?? 500) < 500);
       if (!missing) throw error;
       return undefined;
     }
@@ -403,17 +525,61 @@ export function createRegistry(options: RegistryOptions = {}): Registry {
     const doc = await corgi(name);
     if (before === undefined || excluded(name)) return doc;
     if (Date.parse(doc.modified() ?? "") <= before) return doc;
-    const found = await memo(times, name, () => loadTimes(name));
-    return found ? parsedView(asOf(doc.whole(), found, before)) : doc;
+    const whole = doc.whole();
+    const versions = Object.keys(whole.versions ?? {});
+    const found = await memo(times, name, () => loadTimes(name, versions));
+    return found ? parsedView(asOf(whole, found, before)) : doc;
   }
 
-  async function loadTimes(name: string): Promise<Record<string, string> | undefined> {
-    const bytes = await get(name, path(name), FULL);
-    return pluckTimes(bytes) ?? parseJSON<Packument>(decode(bytes), path(name)).time;
+  /** Publish dates for `versions`, from the full document. */
+  async function loadTimes(
+    name: string,
+    versions: string[],
+  ): Promise<Record<string, string> | undefined> {
+    const url = path(name);
+    const read = (bytes: Uint8Array) =>
+      pluckTimes(bytes) ?? parseJSON<Packument>(decode(bytes), url).time;
+    const found = read(await get(name, url, FULL));
+    const dated = versions.every((v) => found?.[v]);
+    if (!found || dated || !served.has(keyOf(url, FULL))) return found;
+    // Kept from before the abbreviated document was, it lacks the newest dates: ask.
+    try {
+      return read(await get(name, url, FULL, true));
+    } catch (error) {
+      if ((error as { code?: string }).code !== "EOFFLINE") throw error;
+    }
+    // Offline, a version without a date is taken as too new: it was published since.
+    const now = new Date().toISOString();
+    return Object.fromEntries(versions.map((v) => [v, found[v] ?? now]));
   }
 
   const view = (name: string) =>
     before === undefined ? corgi(name) : memo(aged, name, () => loadAged(name));
+
+  async function pick(spec: Spec, pinned?: string, options?: PickOptions): Promise<Manifest> {
+    const name = spec.fetchName;
+    const found = pinned === undefined ? undefined : await loadPinned(name, pinned);
+    if (found) return found;
+    // A tag written out, `foo@latest`, is what it points at now, as npm reads it: revalidated.
+    if (spec.type === "tag" && cache?.mode === "revalidate") recheck(name);
+    try {
+      return pickManifest(await view(name), spec, options);
+    } catch (error) {
+      // A document kept from an earlier run may predate what is asked for: ask once.
+      const { code } = error as { code?: string };
+      const miss = code === "ETARGET" || code === "ENOVERSIONS";
+      if (!miss || !unasked.has(name) || rechecked.has(name)) throw error;
+      recheck(name);
+      return pickManifest(await view(name), spec, options);
+    }
+  }
+
+  /** Ask the registry about a name from now on, forgetting what kept documents answered. */
+  function recheck(name: string): void {
+    if (rechecked.has(name)) return;
+    rechecked.add(name);
+    if (unasked.has(name)) for (const memos of [corgis, peeks, aged, times]) memos.delete(name);
+  }
 
   return {
     base,
@@ -422,8 +588,25 @@ export function createRegistry(options: RegistryOptions = {}): Registry {
     packument: async (name) => (await view(name)).whole(),
     manifest: (name, version) => loadManifest(name, version),
     pinned: (name, version) => loadPinned(name, version),
+    pick,
   };
 }
+
+/** When a response's document was current: now, less the time a CDN has held its copy. */
+function currentAt(response: Response): number {
+  const age = Number(response.headers.get("age"));
+  return Date.now() - (Number.isFinite(age) && age > 0 ? age * 1000 : 0);
+}
+
+/** A kept document for a request, whether it answers unasked, and whether it is the full form. */
+interface Found {
+  doc?: Kept;
+  use: boolean;
+  full?: boolean;
+}
+
+/** Where a document is kept: the abbreviated and full forms of one url are two documents. */
+const keyOf = (url: string, accept: string) => `${accept === CORGI ? "corgi" : "full"} ${url}`;
 
 interface TextView extends PackumentView {
   /** Whether the bytes are a document at all. Parses them whole to say so. */

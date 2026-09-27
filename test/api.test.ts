@@ -242,6 +242,36 @@ describe("api", () => {
     await expect(stat(join(dir, "upm.lock"))).rejects.toThrow();
   });
 
+  it("installs offline from the lockfile, the store and kept documents, and fails fast on more", async () => {
+    await writeFile(join(dir, "package.json"), JSON.stringify({ dependencies: { nanoid: "^5" } }));
+    await upm.install(base);
+    const nm = join(dir, "node_modules");
+    await rm(nm, { recursive: true });
+    const offline = { ...base, offline: true };
+    expect(await upm.install(offline)).toMatchObject({ packages: 1, upToDate: false });
+    expect(await readFile(join(nm, "nanoid", "index.js"), "utf8")).toContain("nanoid");
+
+    // Nothing in this store, and no registry to ask for the new name.
+    const fresh = { ...offline, store: join(dir, "fresh") };
+    await rm(nm, { recursive: true });
+    await expect(upm.install(fresh)).rejects.toMatchObject({ code: "EOFFLINE" });
+    await expect(upm.add(["left-pad"], offline)).rejects.toMatchObject({ code: "EOFFLINE" });
+    expect((await readJson(join(dir, "package.json"))).dependencies).toEqual({ nanoid: "^5" });
+    // The install above kept nanoid's document beside the store.
+    expect(await upm.resolve(["nanoid"], offline)).toMatchObject([{ version: "5.0.0" }]);
+    await expect(upm.resolve(["nanoid"], fresh)).rejects.toMatchObject({ code: "EOFFLINE" });
+  });
+
+  it("fails an offline install missing an optional, rather than skip it", async () => {
+    const optionalDependencies = { nanoid: "^5" };
+    await writeFile(join(dir, "package.json"), JSON.stringify({ optionalDependencies }));
+    await upm.lock(base);
+    const fresh = { ...base, store: join(dir, "fresh"), offline: true };
+    await expect(upm.install(fresh)).rejects.toMatchObject({ code: "EOFFLINE" });
+    // Online, the same store is filled.
+    expect(await upm.install({ ...fresh, offline: false })).toMatchObject({ packages: 1 });
+  });
+
   it("fails a frozen install without a lockfile", async () => {
     await writeFile(join(dir, "package.json"), "{}");
     await expect(upm.install({ ...base, frozen: true })).rejects.toMatchObject({ code: "ELOCK" });

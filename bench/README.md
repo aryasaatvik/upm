@@ -20,22 +20,24 @@ node chart.ts                      # re-render the charts for the newest run
 | `-r, --runners`              | all                     | comma separated runner names                  |
 | `-f, --fixtures`             | `nitro,nuxt,next`       | comma separated fixture names                 |
 | `--cold/--warm/--repeat <n>` | 3 / 3 / 3               | samples per phase for each runner and fixture |
-| `--keep`                     | off                     | keep each project and cache after it runs     |
+| `--keep`                     | off                     | keep each project and cache after its fixture |
 | `--min-free <mb>`            | 3072                    | stop before the disk gets this full           |
 | `-o, --out <file>`           | `results/<stamp>.jsonl` | results file                                  |
 | `--no-chart`                 | off                     | skip the SVG charts                           |
 | `--dry-run`                  | off                     | print the plan and exit                       |
 
-`BENCH_WORK` moves the work directory (default `.work/`). Each runner's output goes to
-`.work/logs/<runner>-<fixture>.log`.
+`BENCH_WORK` moves the work directory (default `~/.cache/upm-bench`, or under
+`XDG_CACHE_HOME`). Each runner's output goes to `<work>/logs/<runner>-<fixture>.log`.
 
 ## What a run does
 
 1. Rebuilds `../dist` so upm is always this working tree.
 2. Downloads every manager with jup and runs its `--version` once, so no download lands in a
    timed run.
-3. For each fixture and runner, runs the three phases below in order, then deletes that
-   project and cache (unless `--keep`).
+3. For each fixture, runs the three phases below in order, in rounds: each round runs every
+   runner once, starting one runner later than the round before. A slow minute of network then
+   lands on every manager, not on whichever ran its samples back to back. Then it deletes the
+   fixture's projects and caches (unless `--keep`).
 4. Writes `results/<stamp>.jsonl` and, beside it, charts for each phase and measure:
    `<stamp>.<phase>.svg`, `.memory.svg`, `.cpu.svg`, plus `<stamp>.size.svg`. A full suite
    (all runners, default fixtures) also refreshes the committed [`charts/`](charts) that the
@@ -102,13 +104,20 @@ store and starts it directly, a native binary as is and a JavaScript entry on th
 
 ## Fairness
 
-- **Private caches.** Each manager's cache lives under `.work/<runner>-<fixture>/cache`, so
+- **Projects outside any other project.** aube and nub install into the nearest directory
+  above the project with `workspaces` in its `package.json` or a `pnpm-workspace.yaml`,
+  without checking the project is a member. Under `bench/.work`, that was this repo: they
+  installed upm's own dev dependencies there and reported the time as the fixture's. So the
+  work directory defaults to outside the repo, and `bench.sh` refuses one with a
+  `package.json` or workspace file anywhere above it.
+- **Private caches.** Each manager's cache lives under `<work>/<runner>-<fixture>/cache`, so
   "cold" is a directory delete and no real cache is touched. pnpm needs both `--store-dir`
   and `XDG_CACHE_HOME`: with the store alone, a "cold" pnpm read the real metadata cache and
   finished `nuxt` in 696 ms instead of 2.98 s. The others use `npm_config_cache`,
   `YARN_GLOBAL_FOLDER`, `BUN_INSTALL_CACHE_DIR`, `DENO_DIR`, `AUBE_STORE_DIR` and the XDG
   directories. Each cold row records the cache size; a successful cold run with a cache
-  under 1 MB gets a warning, as the manager may have used a shared cache.
+  under 1 MB gets a warning, as the manager may have used a shared cache, and so does any
+  successful run that leaves no packages in the project.
 - **Lifecycle scripts are off everywhere**, because upm cannot run them.
 - **A 1-day release-age gate for all**, set by the harness and not left to the machine's npmrc,
   yarnrc or environment, so every machine resolves the same versions (`BENCH_MIN_AGE_DAYS`
@@ -235,7 +244,7 @@ writes. "Newest" means most recently modified, not last by name.
   `RUNTIME` in `chart.ts` and the artwork in `icons.ts`.
 - **The axis is linear from zero**, so twice as far right is twice as long.
 - **Failures stay visible**: all-failed groups are hollow red markers at their time to
-  failure, partial failures get a red outline. Small cold caches get a footnote.
+  failure, partial failures get a red outline. Small cold caches and empty projects get a footnote.
 - **Memory and CPU charts** use the same layout and rules, scored on their own values.
 - **`--size`** draws bars of each manager's size on disk, smallest first, with the ratio to
   upm and, when recorded, its packed size and estimated CI restore.

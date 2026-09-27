@@ -94,6 +94,7 @@ upm dedupe                           # reduce duplicate versions already locked
 upm install --production             # skip packages used only by dev dependencies
 upm install --frozen-lockfile        # CI: fail if the lockfile is missing or stale
 upm install --verify                 # check sizes and links, not file hashes
+upm install --offline                # no network: install from upm.lock and the store
 upm lock                             # write upm.lock without installing packages
 upm resolve vue@^3                   # show which registry version matches
 upm fetch nanoid                     # cache this package, without its dependencies
@@ -255,6 +256,25 @@ upm ci --omit=dev                    # the same, in npm's words
 project. It does not select versions or rewrite the lockfile. Missing cached
 packages still need to be downloaded, so this is not an offline mode.
 
+Registry documents that upm reads while resolving are kept in the store's `metadata`
+directory, under paths named after the registry and package
+(`metadata/registry.npmjs.org/@scope/name/`), so deleting a directory forgets those
+documents. A full document is kept cut down to the fields upm reads. A kept document is used
+without a request within the `max-age` the registry sent (five minutes on npmjs), and, while
+`min-release-age` is on, for as long as it was fetched after the cutoff: any version it lacks
+is too new to pick. After that, upm asks with its ETag and reuses it on a `304`. A tag
+written out, such as `upm exec foo@latest`, is always asked about. When a document used
+without asking cannot satisfy a range or pin, upm asks the registry once.
+
+`--offline` never uses the network. An install from a current lockfile works when the
+store already holds its packages, which a past install on the same machine leaves there.
+A new version is picked from kept documents, however old. Anything else that needs the
+registry or a download fails at once with `EOFFLINE`, including a missing optional package.
+
+`--prefer-offline` also picks from kept documents however old, and asks the registry only
+for a name with no kept document, or one whose kept document cannot satisfy the range.
+Tags such as `latest` may then be out of date.
+
 `--production` skips packages used only by `devDependencies`. It uses the same
 lockfile as a development install; it does not create a smaller lockfile.
 
@@ -392,7 +412,7 @@ Most npm install and run lines work as they are:
   hide progress, the script banner and the install summary. Warnings and errors stay.
 - These are accepted and do nothing, since upm already works this way: `-S`, `--save`,
   `-P`, `--save-prod`, `--ignore-scripts`, `--no-audit`, `--no-fund`, `--no-progress`,
-  `--prefer-offline`, `--legacy-peer-deps` and `--force`.
+  `--legacy-peer-deps` and `--force`.
 
 Flags still go before the script name: `npm run build --if-present` hands
 `--if-present` to npm, but `upm run build --if-present` passes it to the script.
@@ -495,7 +515,8 @@ Settings are read in this order, with later values taking priority:
 3. Project config: `.npmrc` at the project root.
 4. Environment variables such as `npm_config_registry` and `npm_config_save_exact`.
 5. The `--registry <url>` option, for the default registry only, and
-   `--min-release-age <days>`, `--before <date>` and `--min-release-age-exclude <glob>`.
+   `--min-release-age <days>`, `--before <date>`, `--min-release-age-exclude <glob>`,
+   `--offline` and `--prefer-offline`.
 
 A scope's registry still takes priority for packages in that scope, even with
 `--registry`.
@@ -516,6 +537,8 @@ setting has no form there.
 | `min-release-age`                                     | `npm_config_min_release_age`               | Minimum age in days of newly picked versions. Defaults to `1`; `0` turns it off.                                   |
 | `before`                                              | `npm_config_before`                        | Only pick versions published on or before this date.                                                               |
 | `min-release-age-exclude`                             | `npm_config_min_release_age_exclude`       | Package names or globs never held back by [release age](#release-age). A `key[]=` list or a comma-separated value. |
+| `offline`                                             | `npm_config_offline`                       | `true` never uses the network, as `--offline`.                                                                     |
+| `prefer-offline`                                      | `npm_config_prefer_offline`                | `true` picks from kept registry documents without revalidating them, as `--prefer-offline`.                        |
 |                                                       | `npm_config_userconfig`                    | Path of the user config file, instead of `~/.npmrc`.                                                               |
 | `globalconfig` (user config only)                     | `npm_config_globalconfig`                  | Path of the global config file.                                                                                    |
 | `prefix` (user config only)                           | `npm_config_prefix`, `PREFIX`              | The global config file is `<prefix>/etc/npmrc`.                                                                    |
@@ -614,7 +637,8 @@ upm prune
 Prune removes old entries this project no longer needs and cached files that no
 valid package index references. It does **not** remove every unused cached
 package: a valid index keeps its files even if no project uses that package.
-Files and entries written in the last hour are left alone. Avoid running prune
+Kept registry documents are not removed either. Files and entries written in the
+last hour are left alone. Avoid running prune
 during an install; that grace period does not guarantee safe concurrent cleanup.
 
 ## Current limits

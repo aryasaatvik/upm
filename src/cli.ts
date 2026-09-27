@@ -71,6 +71,8 @@ Options
                        run --workspaces: run the root first
   --json               print JSON
   --lock               fetch: use ${LOCKFILE}
+  --offline            never use the network; fail if the registry or a download is needed
+  --prefer-offline     pick from kept registry documents without checking for newer ones
   -O, --optional       add: save to optionalDependencies
   -p, --package <spec> exec: install a package for the command (repeatable)
   -y, --yes            exec: accepted for npx compatibility; no prompts
@@ -101,7 +103,8 @@ Notes
   prune removes unused project entries and unindexed content, keeping package indexes
   and files under an hour old. The shared store can grow.
   Config: --registry > npm_config_* > project .npmrc > ~/.npmrc > global npmrc.
-  Supports registries, credentials, save-exact and \${VAR} values.
+  Supports registries, credentials, save-exact, offline, prefer-offline and \${VAR} values.
+  Registry documents are kept in the store (metadata/) and revalidated with their ETag.
   New picks skip versions under min-release-age days old (default 1; 0 turns it off),
   or newer than before=<date>; min-release-age-exclude[] names or globs are exempt.
 
@@ -115,7 +118,7 @@ Notes
   npm's spellings work too: --save-dev, --save-optional, --save-exact, --omit=dev
   (--production; --include=dev undoes it), --prefix and -C (--dir). Accepted and ignored,
   as upm already behaves so: -S, --save, -P, --save-prod, --ignore-scripts, --no-audit,
-  --no-fund, --no-progress, --prefer-offline, --legacy-peer-deps and --force.
+  --no-fund, --no-progress, --legacy-peer-deps and --force.
 
   Workspaces use package.json patterns. install/lock/dedupe/prune use the root and its .npmrc.
   add/remove target the current workspace or -w. Bare workspace names save ^version;
@@ -182,6 +185,10 @@ export interface Cli {
   minReleaseAgeExclude?: string[];
   /** `-s`, `-q` or a low `--loglevel`: no progress notes, run banner or install summary. */
   quiet?: boolean;
+  /** `--offline`: never ask the registry or download a tarball. */
+  offline?: boolean;
+  /** `--prefer-offline`: pick from kept registry documents without revalidating them. */
+  preferOffline?: boolean;
 }
 
 /** `resolvePool` left to the pool to size by the cores; the user did not ask for a count. */
@@ -232,7 +239,6 @@ const NPM_NOOPS = new Set([
   "--no-audit",
   "--no-fund",
   "--no-progress",
-  "--prefer-offline",
   "--legacy-peer-deps",
   "--force",
   "-S",
@@ -344,6 +350,10 @@ export function parseArgv(argv: string[]): Cli {
       cli.production = true;
     } else if (arg === "--lock") {
       cli.lock = true;
+    } else if (arg === "--offline") {
+      cli.offline = true;
+    } else if (arg === "--prefer-offline") {
+      cli.preferOffline = true;
     } else if (arg === "--frozen-lockfile") {
       cli.frozen = true;
     } else if (arg === "--verify") {
@@ -536,6 +546,8 @@ async function dispatch(cli: Cli, fromProject: boolean): Promise<string> {
     minReleaseAge: cli.minReleaseAge,
     before: cli.before,
     minReleaseAgeExclude: cli.minReleaseAgeExclude,
+    offline: cli.offline,
+    preferOffline: cli.preferOffline,
     log: note,
   };
   const store = { ...base, store: cli.store };
@@ -664,6 +676,8 @@ async function runCommand(cli: Cli): Promise<number> {
       minReleaseAge: cli.minReleaseAge,
       before: cli.before,
       minReleaseAgeExclude: cli.minReleaseAgeExclude,
+      offline: cli.offline,
+      preferOffline: cli.preferOffline,
       store: cli.store,
     });
   } catch (error) {
@@ -694,6 +708,8 @@ async function execCommand(cli: Cli): Promise<number> {
     minReleaseAge: cli.minReleaseAge,
     before: cli.before,
     minReleaseAgeExclude: cli.minReleaseAgeExclude,
+    offline: cli.offline,
+    preferOffline: cli.preferOffline,
     store: cli.store,
     packages: cli.packages,
     call: cli.call !== undefined,

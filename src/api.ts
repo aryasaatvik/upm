@@ -111,7 +111,9 @@ export type ErrorCode =
   /** The registry answered with an error, or could not be reached in time. */
   | "EREGISTRY"
   | "ENETWORK"
-  | "ETIMEDOUT";
+  | "ETIMEDOUT"
+  /** Under `offline`, the registry was needed or a tarball is not in the store. */
+  | "EOFFLINE";
 
 export interface ProjectOptions {
   /**
@@ -136,6 +138,18 @@ export interface RegistryAccess {
   before?: string;
   /** Names or globs the cutoff never applies to, in place of `.npmrc`'s list. */
   minReleaseAgeExclude?: string[];
+  /**
+   * Never ask the registry or download a tarball, over `.npmrc` and `npm_config_offline`: a pick
+   * reads the documents kept from earlier runs, and what needs more fails with `EOFFLINE`. An
+   * install from a current lockfile into a store that holds its packages needs neither.
+   * Default: npm's config, else false.
+   */
+  offline?: boolean;
+  /**
+   * Pick from a kept document however old, over `.npmrc`'s `prefer-offline`: the registry is
+   * asked for a name only when none is kept, or the kept one cannot satisfy the spec.
+   */
+  preferOffline?: boolean;
 }
 
 export interface StoreAccess {
@@ -503,13 +517,7 @@ async function installTree(ctx: Context, edit?: Edit, loaded?: Project): Promise
     }
   }
   const pool = linkPool(ctx, state === undefined);
-  const auth = settings(ctx).auth;
-  const store = createStore({
-    dir: options.store,
-    verify: options.verify,
-    auth,
-    noThreads: ctx.noThreads,
-  });
+  const store = openStore(ctx, options.verify);
   trace("store");
   const walk = {
     onPick: prefetch(ctx, dir, store, pool?.picked),
@@ -569,7 +577,9 @@ async function installTree(ctx: Context, edit?: Edit, loaded?: Project): Promise
           if (!pkg.optional && pkg.source !== undefined) {
             throw (await import("./tarball-deps.ts")).stale(error, pkg.source);
           }
-          if (!pkg.optional) throw error;
+          // Offline, a missing optional fails too: skipped, it would not be fetched again until
+          // the resolution changes.
+          if (!pkg.optional || (error as { code?: string }).code === "EOFFLINE") throw error;
           log(`skipped optional ${pkg.name}@${pkg.version}: ${describe(error)}`, "warn");
         }
       }),
@@ -622,12 +632,7 @@ async function installTree(ctx: Context, edit?: Edit, loaded?: Project): Promise
     // failed link is the proof that an index here promises files that are not on disk, so this
     // is the one pass that must stat them rather than believe them.
     if ((error as { code?: string }).code !== "ELINK") throw error;
-    const again = createStore({
-      dir: options.store,
-      verify: true,
-      auth,
-      noThreads: ctx.noThreads,
-    });
+    const again = openStore(ctx, true);
     await fill(again);
     return await linkTree(resolution, { ...link, store: again, awaiting: undefined });
   });
@@ -884,7 +889,7 @@ export async function add(specs: string[], options: AddOptions = {}): Promise<Ad
           const { dir } = edit.project;
           let name = spec?.name;
           if (name === undefined) {
-            const store = createStore({ dir: options.store, auth: settings(ctx).auth });
+            const store = openStore(ctx);
             name = await nameOf(tarballReader(ctx, dir, store), dir, edit.file, raw, fetchSpec);
           }
           return { name, range: parseDep(name, fetchSpec).fetchSpec, group };
@@ -1319,11 +1324,7 @@ export async function lock(options: LockOptions = {}): Promise<Lockfile> {
     return locked;
   }
   const existing = await currentLock(ctx, dir);
-  const store = createStore({
-    dir: options.store,
-    auth: settings(ctx).auth,
-    noThreads: ctx.noThreads,
-  });
+  const store = openStore(ctx);
   const tarball = tarballReader(ctx, dir, store);
   const moved = existing ? await movedIn(ctx, dir, existing, tarball) : [];
   if (existing && moved.length === 0 && sameTree(existing, manifest, workspaces)) {
@@ -1359,11 +1360,7 @@ export async function fetchLockfile(options: FetchLockfileOptions = {}): Promise
     ? await foreignLock(ctx, await loadProject(ctx), foreign)
     : await readLockfile(dir);
   if (!lock) throw fail(`no ${LOCKFILE} in ${dir}`, "ELOCK");
-  const store = createStore({
-    dir: options.store,
-    auth: settings(ctx).auth,
-    noThreads: ctx.noThreads,
-  });
+  const store = openStore(ctx);
   const resolution = filterPlatform(fromCheckedLockfile(lock, hostsOf(ctx)));
   for (const warning of resolution.warnings) ctx.log(warning, "warn");
   // Not the workspaces: there is no tarball to fetch for a directory.
@@ -1399,11 +1396,7 @@ export async function fetchPackages(
 ): Promise<Fetched[]> {
   const ctx = await open(options);
   const picked = await pickAll(ctx, specs);
-  const store = createStore({
-    dir: options.store,
-    auth: settings(ctx).auth,
-    noThreads: ctx.noThreads,
-  });
+  const store = openStore(ctx);
   return await Promise.all(
     picked.map(async (manifest) =>
       fetched(manifest, await store.add(manifest.dist.tarball, integrityOf(manifest))),
@@ -1557,6 +1550,13 @@ function settings(ctx: Context): Config {
   return (ctx.config ??= readConfig(ctx.root ?? globalThis.process.cwd(), ctx.options));
 }
 
+/** The store, downloading with the config's credentials, or never under `offline`. */
+function openStore(ctx: Context, verify?: boolean): Store {
+  const { auth, offline } = settings(ctx);
+  const dir = ctx.options.store;
+  return createStore({ dir, verify, auth, offline, noThreads: ctx.noThreads });
+}
+
 /** Where each name's tarball is, for a lockfile that does not say. */
 function hostsOf(ctx: Context): BaseFor {
   const { registry, scopes } = settings(ctx);
@@ -1631,6 +1631,10 @@ interface OpenRegistry extends Registry {
  */
 async function openRegistry(ctx: Context, size = ctx.resolvePool): Promise<OpenRegistry> {
   const { registry, scopes, auth, before, releaseAgeExclude: exclude } = settings(ctx);
+  const { offline, preferOffline } = settings(ctx);
+  const mode = offline ? "only" : preferOffline ? "prefer" : "revalidate";
+  const { createDocumentCache, metadataDir } = await import("./metadata.ts");
+  const metadata = { dir: metadataDir(storeDir(ctx.options.store)), mode } as const;
   const loaded = await import("./registry-pool.ts").catch(() => undefined);
   if (!loaded && size !== 0) ctx.noThreads();
   const pool = loaded
@@ -1644,8 +1648,19 @@ async function openRegistry(ctx: Context, size = ctx.resolvePool): Promise<OpenR
         strict: size !== undefined && size > 0,
         warn: (message) => ctx.log(message, "debug"),
         noThreads: ctx.noThreads,
+        metadata,
       })
-    : { ...createRegistry({ registry, scopes, auth, before, exclude }), close() {} };
+    : {
+        ...createRegistry({
+          registry,
+          scopes,
+          auth,
+          before,
+          exclude,
+          cache: createDocumentCache(metadata),
+        }),
+        close() {},
+      };
   // Before the first question: `fetch` takes the dispatcher of the moment it is called, so a
   // request made while the swap is in flight opens its socket on the agent about to be dropped
   // and the next request connects again (+20 ms on a one-package install). The wait is the
