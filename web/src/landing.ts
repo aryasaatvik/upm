@@ -1,6 +1,6 @@
 // The landing: the hero, centered on the screen, with examples to try. Plain DOM, no React.
 // A package opens in place (src/router.ts), so the logo and the box move up into the
-// playground's top bar instead of the page reloading.
+// app's top bar instead of the page reloading.
 import {
   ARROW,
   BUTTON,
@@ -98,7 +98,7 @@ export function mount(root: HTMLElement) {
     clearTimeout(reset);
     reset = setTimeout(() => (icon.innerHTML = svg(COPY, 2)), 1500);
   });
-  // Load the playground once the page is in use, so a package opens without a wait.
+  // Load the app once the page is in use, so a package opens without a wait.
   root.addEventListener("pointerover", loadPlay, { once: true });
   root.addEventListener("focusin", loadPlay, { once: true });
 }

@@ -1,8 +1,11 @@
 // upm's own `install`, run in this tab: ./node.ts stands in for Node's `process`, and its
-// filesystem holds the project and the store. The store is kept on OPFS across runs and visits;
-// the project is made fresh for each run. Both, and upm's commands, load on the first install.
+// filesystem holds the project and the store. The project is made fresh for each run; the
+// store's content is kept on OPFS (./opfs.ts) across runs, tabs and visits, and upm asks it
+// before a download. Those, and upm's commands, load on the first install.
 import type { InstallResult } from "upm/src/api.ts";
 import type { TarEntry } from "upm/src/tar.ts";
+import { backendKey } from "upm/src/store-backend.ts";
+import { opfsBackend } from "./opfs.ts";
 
 const PROJECT = "/project";
 const HOME = "/home/user";
@@ -38,24 +41,38 @@ async function ready(): Promise<typeof import("./node.ts")> {
 
 /**
  * A tarball's files as the store kept them from an earlier install, or undefined when it has
- * not got them all. Reads only those, not the whole store the install loads.
+ * not got them all: this tab's store first, then OPFS. Reads only those files.
  */
 export async function storedFiles(integrity: string): Promise<TarEntry[] | undefined> {
   try {
-    const read = await (await ready()).reader();
+    const node = await ready();
     const { isIndex, storeDir } = await import("upm/src/store.ts");
     const { createWriter } = await import("upm/src/unpack.ts");
     const writer = createWriter(storeDir());
-    const [raw] = await read([writer.indexPath(integrity)]);
+    let listed: { path: string; size: number; exec: boolean; read(): Promise<unknown> }[];
+    const raw = readSync(node, writer.indexPath(integrity));
     const index: unknown = raw && JSON.parse(new TextDecoder().decode(raw));
-    if (!isIndex(index)) return undefined;
-    const blobs = await read(index.files.map((file) => writer.blobPath(file.blob)));
+    if (isIndex(index)) {
+      listed = index.files.map((file) => ({
+        ...file,
+        exec: file.blob.endsWith("-exec"),
+        read: async () => readSync(node, writer.blobPath(file.blob)),
+      }));
+    } else {
+      const backend = await opfsBackend();
+      const pkg = { integrity, key: backendKey(integrity) };
+      const call = { signal: new AbortController().signal, alive: () => {} };
+      const kept = await backend?.getIndex(pkg, call);
+      if (!backend || !kept) return undefined;
+      const got = backend.getBlobs(pkg, kept.files, call);
+      listed = kept.files.map((file, i) => ({ ...file, read: async () => (await got)[i] }));
+    }
+    const blobs = await Promise.all(listed.map((file) => file.read()));
     const files: TarEntry[] = [];
-    for (const [i, file] of index.files.entries()) {
+    for (const [i, file] of listed.entries()) {
       const data = blobs[i];
-      if (data?.length !== file.size) return undefined;
-      const mode = file.blob.endsWith("-exec") ? 0o755 : 0o644;
-      files.push({ path: file.path, mode, size: file.size, data });
+      if (!(data instanceof Uint8Array) || data.length !== file.size) return undefined;
+      files.push({ path: file.path, mode: file.exec ? 0o755 : 0o644, size: file.size, data });
     }
     return files;
   } catch {
@@ -63,9 +80,17 @@ export async function storedFiles(integrity: string): Promise<TarEntry[] | undef
   }
 }
 
+function readSync(node: typeof import("./node.ts"), path: string): Uint8Array | undefined {
+  try {
+    return node.fs.readFileSync(path) as Uint8Array;
+  } catch {
+    return undefined;
+  }
+}
+
 /** The project's package.json, as the install writes it and the tree shows it before then. */
 export function manifestOf(dependencies: Record<string, string>): InstalledFile {
-  const manifest = { name: "playground", version: "0.0.0", dependencies };
+  const manifest = { name: "project", version: "0.0.0", dependencies };
   const data = new TextEncoder().encode(`${JSON.stringify(manifest, null, 2)}\n`);
   return { path: "package.json", mode: 0o644, size: data.length, data };
 }
@@ -83,9 +108,8 @@ export function installInTab(
 ): Promise<Installed> {
   const run = running.then(async () => {
     const node = await ready();
-    if (!(await node.persist())) {
-      log("the store is in memory only: OPFS is missing here, or another tab keeps it", "warn");
-    }
+    const storeBackend = await opfsBackend();
+    if (!storeBackend?.put) log("the store is in memory only: OPFS cannot be written here", "warn");
     node.fs.rmSync(PROJECT, { recursive: true, force: true });
     node.fs.mkdirSync(PROJECT, { recursive: true });
     node.fs.writeFileSync(`${PROJECT}/package.json`, manifestOf(dependencies).data);
@@ -98,7 +122,13 @@ export function installInTab(
     const quiet = (message: string, level: string) => {
       if (!message.startsWith("worker threads unavailable")) log(message, level);
     };
-    const result = await install({ dir: PROJECT, registry, minReleaseAge: 0, log: quiet });
+    const result = await install({
+      dir: PROJECT,
+      registry,
+      minReleaseAge: 0,
+      storeBackend,
+      log: quiet,
+    });
     const ms = performance.now() - start;
     const files = new Map<string, InstalledFile>();
     const links = new Map<string, string>();

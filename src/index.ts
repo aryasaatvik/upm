@@ -16,6 +16,14 @@ export {
 export type { LockEntry, Lockfile, WorkspaceEntry } from "./lock.ts";
 export type { PeerKind, RootSpecs } from "./resolve.ts";
 export type { Dist, Manifest } from "./types.ts";
+export type {
+  BackendCall,
+  BackendFile,
+  BackendIndex,
+  BackendPackage,
+  BackendPut,
+  StoreBackend,
+} from "./store-backend.ts";
 
 export type {
   AddOptions,

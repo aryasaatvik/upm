@@ -97,6 +97,36 @@ describe("api", () => {
     expect((await upm.fetchPackages(["nanoid"], base))[0]!.cached).toBe(true);
   });
 
+  it("installs through a store backend, which holds the package once the install returns", async () => {
+    const indexes = new Map<string, upm.BackendIndex>();
+    const blobs = new Map<string, Uint8Array>();
+    const storeBackend: upm.StoreBackend = {
+      getIndex: async ({ integrity }) => indexes.get(integrity),
+      getBlobs: async (_, files) => files.map((file) => blobs.get(file.hash)),
+      async put({ integrity, index, read }) {
+        for (const file of index.files) blobs.set(file.hash, await read(file));
+        indexes.set(integrity, index);
+      },
+    };
+    await writeFile(join(dir, "package.json"), '{ "dependencies": { "nanoid": "^5" } }');
+    await upm.install({ ...base, storeBackend });
+    expect([...indexes.keys()]).toEqual([hashOf(tarball)]);
+
+    // `fetchPackages` hands on what it downloads before it returns too.
+    indexes.clear();
+    await upm.fetchPackages(["nanoid"], { ...base, store: join(dir, "fetched"), storeBackend });
+    expect([...indexes.keys()]).toEqual([hashOf(tarball)]);
+
+    await rm(join(dir, "node_modules"), { recursive: true });
+    let requested = 0;
+    server.on("request", (request) => void (request.url?.endsWith(".tgz") && requested++));
+    await upm.install({ ...base, store: join(dir, "other-store"), storeBackend, frozen: true });
+    expect(requested).toBe(0);
+    expect(await readFile(join(dir, "node_modules", "nanoid", "index.js"), "utf8")).toContain(
+      "nanoid",
+    );
+  });
+
   it("fails a bad spec before any request is left running", async () => {
     await writeFile(join(dir, "package.json"), "{}");
     await expect(upm.resolve(["missing", "bad name@1"], base)).rejects.toMatchObject({

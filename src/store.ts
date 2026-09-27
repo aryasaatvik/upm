@@ -2,6 +2,7 @@
 // the tarball integrity, so a tarball we have seen before is never fetched or untarred again.
 import { builtin } from "./builtin.ts";
 import { cacheLookups, fetching } from "./dns.ts";
+import type { BackendClient, StoreBackend } from "./store-backend.ts";
 import type { Pool, Sink } from "./unpack-pool.ts";
 import {
   createAdaptiveLimiter,
@@ -65,6 +66,9 @@ export interface StoreOptions {
   verify?: boolean;
   /** A tarball not already here fails with `EOFFLINE` instead of being downloaded. */
   offline?: boolean;
+  /** See `StoreBackend`; `backendFailed` is told once when it fails. */
+  backend?: StoreBackend;
+  backendFailed?: (error: unknown) => void;
 }
 
 export interface Store {
@@ -84,6 +88,8 @@ export interface Store {
   adopt(tarball: Tarball): Promise<{ index: PackageIndex; integrity: string }>;
   /** Stop the unpack threads. Nothing may still be adding. */
   close(): void;
+  /** Wait for the backend's puts. */
+  flush(): Promise<void>;
   /**
    * `add`, for a caller that wants the content here and not the index: one that is already
    * here is not read, which is 559 reads and parses on a warm `nuxt`. A torn index passes as
@@ -152,6 +158,13 @@ export function createStore(options: StoreOptions = {}): Store {
   // machine's business and not the registry's; the pool bounds itself by its thread count.
   const stall = options.stall ?? STALL;
   const verify = options.verify === true;
+  const backend = options.backend;
+  let backing: Promise<BackendClient | void> | undefined;
+  const client = () =>
+    (backing ??= import("./store-backend.ts").then(
+      (lib) => lib.createBackendClient(options, writer, disk, stall),
+      options.backendFailed,
+    ));
   const net = createAdaptiveLimiter({ max: concurrency });
   const disk = createLimiter(fsConcurrency());
   const writer = createWriter(dir);
@@ -250,16 +263,22 @@ export function createStore(options: StoreOptions = {}): Store {
     // for one, and nor does one of a package or five. Its loading is not waited on here: the
     // tarball is asked for now, and the pool is wanted once its headers or its bytes are in.
     if (!loading) void loadPool();
+    if (backend) {
+      const kept = await (await client())?.fetch(integrity, !!hit);
+      if (kept) return await publish(integrity, kept);
+    }
     behind++;
     trace("miss", { i: integrity, behind });
     try {
       // The address cache, in place before the first request; usually already, by the walk.
       const lookups = cacheLookups();
       if (lookups) await lookups;
-      return await net((signal) => {
+      const index = await net((signal) => {
         trace("slot", { i: integrity, behind });
         return download(tarball, integrity, hit !== undefined, signal);
       });
+      if (backend?.put) void client().then((it) => it?.put(integrity, index, tarball));
+      return index;
     } finally {
       behind--;
     }
@@ -537,6 +556,9 @@ export function createStore(options: StoreOptions = {}): Store {
     },
     close() {
       pool?.close();
+    },
+    async flush() {
+      await (await backing)?.flush();
     },
   };
   return store;

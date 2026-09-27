@@ -192,7 +192,7 @@ function Welcome({ examples, onRun }: { examples: string[]; onRun: (spec: string
     <div className="flex h-full overflow-auto p-8">
       <div className="m-auto max-w-lg text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
         <h1 className="mb-3 font-mono text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-          upm <span className="text-zinc-400">playground</span>
+          upm
         </h1>
         <p>
           Type a package spec above and press Enter. Everything runs in this tab, straight against

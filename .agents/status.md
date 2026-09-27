@@ -90,6 +90,16 @@ compatibility. Keep this page about open work, not completed implementation step
   response, not the live registry. `audit fix` is a separate question: it means choosing
   upgrades.
 
+- **Store backend gaps:** `StoreBackend` (`src/store-backend.ts`) is an API option only;
+  there is no CLI or config for it. Load a module only from user config or the environment,
+  never a project's `.npmrc`, which would run a cloned repo's code on install. Tarball
+  dependencies (`adopt` in `src/store.ts`) skip it, and a package already in the local store
+  is never handed to it, so a warm machine does not fill it. Each miss asks it once before its
+  download; a batched `hasIndexes`/`prefetch` from the lockfile at fill start would spare the
+  per-package probe. An untrusted remote (HTTP, S3) needs a tarball-level call, so the
+  lockfile's integrity can be checked; blobs from it are streamed whole, not in parts. Measure
+  an empty backend against none with `bench/ab.sh` before and after.
+
 ## Deliberate limits
 
 These need a scope decision, not just a patch:

@@ -244,6 +244,36 @@ the registry client, dependency resolver, and in-memory lockfile tools without
 requiring Node. It does not install files or read `.npmrc` for you. See
 [`src/resolver.ts`](src/resolver.ts) for its exports.
 
+### Store backend
+
+`storeBackend` puts shared storage behind the store: a team cache, a key-value database, the
+browser's OPFS. upm asks it for a package before downloading one, and hands it each package it
+downloads before the command returns. The store is still a real directory that projects link
+from.
+
+```js
+import { install } from "upm";
+
+const indexes = new Map(); // integrity -> index
+const blobs = new Map(); // file hash -> bytes
+
+await install({
+  storeBackend: {
+    getIndex: async ({ integrity }) => indexes.get(integrity),
+    getBlobs: async (pkg, files) => files.map((file) => blobs.get(file.hash)),
+    async put({ integrity, index, read }) {
+      for (const file of index.files) blobs.set(file.hash, await read(file));
+      indexes.set(integrity, index);
+    },
+  },
+});
+```
+
+A backend must be trusted as the store is: it decides what a package holds. Its files are
+checked against their hashes unless it says it is `trusted`, and its paths must stay inside the
+package. A failure or a call quiet for 30 s counts as a miss, and upm downloads instead. See
+`StoreBackend` in [`src/store-backend.ts`](src/store-backend.ts).
+
 ## Lockfiles and CI
 
 ```sh
@@ -626,7 +656,8 @@ This checks file sizes, package links, and command-line tool links, and repairs
 problems it detects. It also warns about unmet peer dependency ranges. It does
 **not** check every file's hash, so damage that leaves the file size unchanged can
 go unnoticed. Peer conflicts are reported, not fixed. Downloaded tarballs are
-checked against their integrity before being stored.
+checked against their integrity before being stored; content from a `storeBackend` is
+checked against its file hashes only, and not at all when the backend is `trusted`.
 
 To clean up:
 

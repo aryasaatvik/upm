@@ -1,5 +1,5 @@
 // `virtual:readme`: the repo's README.md as HTML, rendered by md4x at build time, for the landing.
-// Its opening logo heading is `virtual:readme/logo` instead, so the playground can draw the
+// Its opening logo heading is `virtual:readme/logo` instead, so the app can draw the
 // logo without loading the README. The site also serves it for agents: `/README.md` as is, and
 // `/llms.txt` as plain text.
 import { readFileSync } from "node:fs";

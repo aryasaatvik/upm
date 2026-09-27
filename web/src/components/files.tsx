@@ -60,7 +60,7 @@ export function Explorer(props: {
             className="truncate"
             title={
               count?.store.files
-                ? `upm's store holds ${count.store.files} files, ${formatBytes(count.store.bytes)}, from every install in this browser`
+                ? `upm's store holds ${count.store.files} files, ${formatBytes(count.store.bytes)}, from the installs in this tab`
                 : undefined
             }
           >

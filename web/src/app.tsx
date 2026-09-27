@@ -1,4 +1,4 @@
-// The playground as an IDE: top bar, sidebar views, the editor, a bottom panel and a status bar.
+// The app as an IDE: top bar, sidebar views, the editor, a bottom panel and a status bar.
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ResolvedPackage } from "upm/resolver";
 import {
@@ -126,8 +126,10 @@ export function App({ ready }: { ready?: Promise<unknown> }) {
       );
       settle("resolved", query.resolved);
       // Then upm installs it, which finds the registry's answers in the HTTP cache.
+      // Not for a run already replaced: in dev, StrictMode starts each run twice.
       query.resolved.then(
-        (resolved) => install(id, query.dependencies, registry, resolved.lockfile),
+        (resolved) =>
+          run.current === id && install(id, query.dependencies, registry, resolved.lockfile),
         () => {},
       );
     } catch (error) {
@@ -360,7 +362,7 @@ function problemsOf(view: View | undefined): Problem[] {
   for (const message of view.installWarnings ?? []) {
     problems.push({ level: "warning", source: "install", message });
   }
-  if (insecure) problems.push({ level: "warning", source: "playground", message: insecure });
+  if (insecure) problems.push({ level: "warning", source: "app", message: insecure });
   return problems;
 }
 
