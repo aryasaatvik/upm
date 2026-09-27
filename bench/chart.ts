@@ -40,9 +40,40 @@ const COLOR: Record<Phase, string> = { cold: "#1d4f9e", warm: "#e0661a", repeat:
 const SURFACE = "#fcfcfb",
   INK = "#20252c",
   MUTED = "#606974",
-  GRID = "#e2e5e8";
+  GRID = "#e2e5e8",
+  BORDER = "#d7dce1",
+  STRIPE = "#f3f5f6",
+  UPM_ROW = "#edf3fc",
+  BAR = "#8c96a1";
 const BAD = "#b42332",
   WARN = "#915800";
+// Colors are drawn in light as attributes, so static renderers get a whole chart. A viewer
+// that prefers dark gets these instead, from style rules that match the attribute value.
+const DARK: Record<string, string> = {
+  [SURFACE]: "#16181d",
+  [INK]: "#e4e7eb",
+  [MUTED]: "#9aa3ad",
+  [GRID]: "#30353c",
+  [BORDER]: "#343a42",
+  [STRIPE]: "#1d2026",
+  [UPM_ROW]: "#1a2538",
+  [BAR]: "#6b7480",
+  [COLOR.cold]: "#6b9cf0",
+  [COLOR.warm]: "#f28a44",
+  [COLOR.repeat]: "#dc6cb8",
+  [BAD]: "#f06470",
+  [WARN]: "#e0a73a",
+};
+const THEME_STYLE = `<style>
+@media (prefers-color-scheme: dark) {
+${Object.entries(DARK)
+  .map(
+    ([light, dark]) =>
+      `[fill="${light}"] { fill: ${dark} } [stroke="${light}"] { stroke: ${dark} }`,
+  )
+  .join("\n")}
+}
+</style>`;
 const FONT = "system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 const PAD = 16,
   DOT = 3.5,
@@ -75,7 +106,8 @@ const RUNTIME_COLOR: Record<Runtime, string> = {
   node: "#5fa04e",
   rust: INK,
   bun: INK,
-  deno: INK,
+  // Kept dark in both themes: the logo draws it on its own white disc.
+  deno: "#000",
 };
 
 export function esc(value: unknown): string {
@@ -495,7 +527,7 @@ export function build(data: Benchmark): string {
         width: width - PAD * 2 + 20,
         height: rowHeights[i]!,
         rx: 4,
-        fill: runner.name === "upm" ? "#edf3fc" : "#f3f5f6",
+        fill: runner.name === "upm" ? UPM_ROW : STRIPE,
       });
     top += rowHeights[i]!;
     s.line(PAD - 10, top, width - PAD + 10, top, GRID, 0.7);
@@ -628,6 +660,7 @@ function open(s: Svg, width: number, height: number, title: string, description:
   );
   s.add("title", { id: "title" }, esc(title));
   s.add("desc", { id: "description" }, esc(description));
+  s.parts.push(THEME_STYLE);
   s.add("rect", { width, height, rx: 8, fill: SURFACE });
   s.add("rect", {
     x: 0.5,
@@ -636,7 +669,7 @@ function open(s: Svg, width: number, height: number, title: string, description:
     height: height - 1,
     rx: 8,
     fill: "none",
-    stroke: "#d7dce1",
+    stroke: BORDER,
   });
 }
 
@@ -754,7 +787,7 @@ export function buildSize(data: Benchmark): string {
         width: width - PAD * 2 + 20,
         height: rowHeight,
         rx: 4,
-        fill: runner.name === "upm" ? "#edf3fc" : "#f3f5f6",
+        fill: runner.name === "upm" ? UPM_ROW : STRIPE,
       });
   });
   for (const tick of axis.ticks()) {
@@ -785,7 +818,7 @@ export function buildSize(data: Benchmark): string {
         width: length,
         height: bar,
         rx: 2,
-        fill: upm ? COLOR.cold : "#8c96a1",
+        fill: upm ? COLOR.cold : BAR,
       },
       `<title>${esc(`${runner.name} ${runner.version}: ${[`${fmtBytes(runner.bytes!)} on disk`, restoreLabel(runner)].filter(Boolean).join(", ")}`)}</title>`,
     );
