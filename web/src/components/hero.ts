@@ -5,15 +5,16 @@ export { default as logo } from "virtual:readme/logo";
 
 /** The top-right links, Docs and GitHub, each an icon and a label, then the theme toggle. `data-key` names the key
  * that opens one (src/router.ts), and `KEY` underlines that letter in the label. */
-export const NAV = "absolute top-3 right-4 flex items-center gap-2 text-xs sm:right-8";
-const OUTLINE =
-  "rounded-md border border-zinc-300 font-medium text-zinc-700 transition-colors hover:border-amber-500 hover:text-amber-600 dark:border-zinc-700 dark:text-zinc-300 dark:hover:text-amber-400";
-export const LINK = `flex items-center gap-1.5 px-2.5 py-1 ${OUTLINE}`;
+export const NAV = "absolute top-3 right-4 flex items-center gap-1 text-xs sm:right-8";
+const ITEM =
+  "h-6.5 rounded-md font-medium text-zinc-700 transition-colors hover:bg-zinc-200/70 hover:text-amber-600 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-amber-400";
+export const LINK = `flex items-center gap-1.5 px-2.5 ${ITEM}`;
 /** The theme toggle (src/theme.ts), a square as tall as the links. */
-export const TOGGLE = `grid size-6.5 cursor-pointer place-items-center ${OUTLINE}`;
+export const TOGGLE = `grid w-6.5 cursor-pointer place-items-center ${ITEM}`;
 export const KEY = "underline underline-offset-2";
 export const REPO = "https://github.com/unjs/upm";
-export const LOGO = "flex justify-center [view-transition-name:logo] [&_img]:w-auto";
+export const LOGO =
+  "flex justify-center [view-transition-name:logo] [&_img]:w-auto [&_img]:max-w-none";
 export const FORM =
   "group mx-auto flex items-stretch overflow-hidden rounded-xl border border-zinc-300 bg-(--editor-bg) shadow-sm transition [view-transition-name:spec] hover:border-zinc-400 focus-within:border-amber-500 focus-within:ring-4 focus-within:ring-amber-500/15 focus-within:hover:border-amber-500 dark:border-zinc-700 dark:hover:border-zinc-600";
 export const INPUT =

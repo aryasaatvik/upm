@@ -51,6 +51,8 @@ export interface View {
   dependencies?: Record<string, string>;
   /** upm's install of it in this tab: true while it runs. */
   installed?: Installed | Error | true;
+  /** When the install was asked for, to draw its time while it runs. */
+  installStarted?: number;
   /** Its warnings, as upm logs them. */
   installWarnings?: string[];
 }
@@ -162,7 +164,7 @@ export function App({ ready }: { ready?: Promise<unknown> }) {
     const warnings: string[] = [];
     const update = (part: Partial<View>) =>
       run.current === id && setView((view) => view && { ...view, ...part });
-    update({ installed: true, installWarnings: warnings });
+    update({ installed: true, installStarted: performance.now(), installWarnings: warnings });
     // Its requests are upm's own, not this client's: redraw on a clock while it runs.
     const clock = setInterval(redraw, 100);
     installInTab(

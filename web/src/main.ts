@@ -2,6 +2,9 @@ import { DOCS, NPM, pathOf } from "./lib/route.ts";
 import { route } from "./router.ts";
 import "./theme.ts";
 
+// Safari's own pinch event, for the iOS versions that zoom past `touch-action` (src/style.css).
+document.addEventListener("gesturestart", (e) => e.preventDefault());
+
 const { pathname, search, hash } = location;
 // Links from before the `/npm/` route.
 const q = new URLSearchParams(search).get("q");

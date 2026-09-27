@@ -1,10 +1,11 @@
-// `virtual:readme`: the repo's README.md as HTML, rendered by md4x at build time, for the landing.
+// `virtual:readme`: the repo's README.md as HTML, rendered by md4x at build time, for the landing,
+// and its `toc`: the h2 and h3 headings, for the docs' side nav.
 // Its opening logo heading is `virtual:readme/logo` instead, so the app can draw the
 // logo without loading the README. The site also serves it for agents: `/README.md` as is, and
 // `/llms.txt` as plain text.
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { init, renderToHtml, renderToText } from "md4x";
+import { init, parseMeta, renderToHtml, renderToText } from "md4x";
 import { highlightText } from "rangi";
 import type { Plugin } from "vite";
 
@@ -46,7 +47,8 @@ export function readme(file: string, repo: string): Plugin {
       if (id !== `\0${BODY}` && id !== `\0${LOGO}`) return;
       this.addWatchFile(file);
       await init();
-      let html = renderToHtml(readFileSync(file, "utf8"), {
+      const md = readFileSync(file, "utf8");
+      let html = renderToHtml(md, {
         headingIds: true,
         highlighter: (code, { lang }) =>
           `<pre>${highlightText(code, { lang: lang || "plain", lineNumbers: false })}</pre>`,
@@ -55,9 +57,10 @@ export function readme(file: string, repo: string): Plugin {
       // The logo is what the first heading holds; the body is what follows it.
       const open = html.indexOf(">", html.indexOf("<h1")) + 1;
       const close = html.indexOf("</h1>");
-      return id === `\0${LOGO}`
-        ? toModule(html.slice(open, close), file, repo)
-        : toModule(html.slice(close + "</h1>".length), file, repo);
+      if (id === `\0${LOGO}`) return toModule(html.slice(open, close), file, repo);
+      // The same ids `headingIds` gave the headings above.
+      const toc = parseMeta(md).headings.filter((h) => h.level === 2 || h.level === 3);
+      return `${toModule(html.slice(close + "</h1>".length), file, repo)}\nexport const toc = ${JSON.stringify(toc)};`;
     },
   };
 }

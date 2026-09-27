@@ -61,9 +61,16 @@ lifecycle scripts for a fairer comparison.
 
 ## Get started
 
-Install upm globally:
+Install upm globally. The scripts check for Node.js 22.3+, then install upm with npm.
 
 ```sh
+# macOS / Linux
+curl -fsSL https://upm.sh/install.sh | sh
+
+# Windows (PowerShell)
+irm https://upm.sh/install.ps1 | iex
+
+# npm
 npm i -g upm --min-release-age 0
 ```
 

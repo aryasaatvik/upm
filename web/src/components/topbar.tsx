@@ -14,7 +14,6 @@ import {
   OCTOCAT,
   PLACEHOLDER,
   REPO,
-  SEARCH,
   SMALL,
   SUN,
   TOGGLE,
@@ -48,7 +47,6 @@ export function TopBar(props: {
         }}
         className={`${FORM} ${SMALL.form}`}
       >
-        <HeroIcon icon={SEARCH} width={2} />
         <div className="relative flex min-w-0 flex-1">
           <input
             autoFocus={!spec}
@@ -95,8 +93,8 @@ export function TopBar(props: {
         </button>
       </form>
 
-      <nav className="flex items-center gap-2 justify-self-end text-xs">
-        <a href="/docs" title="Docs" data-key="d" className={LINK}>
+      <nav className="flex items-center justify-self-end text-xs sm:gap-1">
+        <a href="/docs" title="Docs" data-key="d" className={`${LINK} max-sm:px-1.5`}>
           <HeroIcon icon={BOOK} width={2} />
           <span className="hidden sm:inline">
             <span className={KEY}>D</span>ocs
@@ -108,7 +106,7 @@ export function TopBar(props: {
           rel="noreferrer"
           title="GitHub"
           data-key="g"
-          className={LINK}
+          className={`${LINK} max-sm:px-1.5`}
         >
           <HeroIcon icon={OCTOCAT} width={2} />
           <span className="hidden sm:inline">
@@ -130,7 +128,7 @@ export function TopBar(props: {
   );
 }
 
-function HeroIcon({ icon, width }: { icon: typeof SEARCH; width: number }) {
+function HeroIcon({ icon, width }: { icon: typeof ARROW; width: number }) {
   return (
     <svg
       viewBox="0 0 24 24"

@@ -4,7 +4,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import type { Resolution } from "upm/resolver";
 import type { View } from "../app.tsx";
-import { DEFAULT_REGISTRY, type RequestEntry } from "../lib/client.ts";
+import { DEFAULT_REGISTRY, type RequestEntry, type Resolved } from "../lib/client.ts";
 import { formatBytes } from "./code.tsx";
 import { formatMs, type PanelTab, type Problem } from "./panel.tsx";
 import { Badge, Icon, Pulse } from "./ui.tsx";
@@ -35,12 +35,7 @@ export function StatusBar(props: {
       </span>
     );
   } else if (view?.resolved) {
-    state = (
-      <span className="flex items-center gap-1.5" title="Resolve time">
-        <Icon name="check" className="size-3 text-emerald-600" />
-        <Dim>resolve</Dim> {formatMs(view.resolved.ms)}
-      </span>
-    );
+    state = <Timeline view={view} resolved={view.resolved} />;
   } else if (view) {
     state = (
       <span className="flex items-center gap-1.5">
@@ -78,7 +73,6 @@ export function StatusBar(props: {
 
         <div className="ml-auto flex items-center">
           <Item>{state}</Item>
-          <Install view={view} />
           {tarball && (
             <Item
               title={
@@ -215,28 +209,49 @@ function Deprecated({ view }: { view: View | undefined }) {
   );
 }
 
-/** upm's install in this tab, which follows the resolve. */
-function Install({ view }: { view: View | undefined }) {
-  if (!view?.resolved || view.resolved instanceof Error || !view.installed) return null;
-  if (view.installed === true) {
-    return (
-      <Item>
-        <Pulse /> Installing
-      </Item>
-    );
-  }
-  if (view.installed instanceof Error) {
-    return (
-      <Item className="text-red-600 dark:text-red-400">
-        <Icon name="error" className="size-3" /> Install failed
-      </Item>
-    );
-  }
+/**
+ * Resolve then install on one bar, each part as long as its time. The install starts when the
+ * resolve ends and installs its lockfile, so the two times add up.
+ */
+function Timeline({ view, resolved }: { view: View; resolved: Resolved }) {
+  const installed = view.installed;
+  const failed = installed instanceof Error;
+  // The app redraws while the install runs, so its part grows.
+  const install =
+    installed === true
+      ? performance.now() - (view.installStarted ?? performance.now())
+      : installed && !failed
+        ? installed.ms
+        : 0;
+  const total = resolved.ms + install || 1;
   return (
-    <Item title="Install time, upm in this tab">
-      <Icon name="check" className="size-3 text-emerald-600" />
-      <Dim>install</Dim> {formatMs(view.installed.ms)}
-    </Item>
+    <span
+      className="flex items-center gap-1.5"
+      title="Resolve, then install in this tab from its lockfile: one after the other"
+    >
+      <Dim>resolve</Dim>
+      {formatMs(resolved.ms)}
+      <span className="hidden h-1.5 w-16 overflow-hidden rounded-full bg-zinc-200/70 sm:flex dark:bg-zinc-800">
+        <span
+          className="bg-zinc-300 dark:bg-zinc-600"
+          style={{ width: `${(resolved.ms / total) * 100}%` }}
+        />
+        {install > 0 && (
+          <span
+            className={`ml-px bg-zinc-400 dark:bg-zinc-500 ${installed === true ? "animate-pulse" : ""}`}
+            style={{ width: `${(install / total) * 100}%` }}
+          />
+        )}
+      </span>
+      {failed ? (
+        <span className="text-red-600 dark:text-red-400">install failed</span>
+      ) : (
+        <>
+          <Dim>{installed === true ? "installing" : "install"}</Dim>
+          {installed && installed !== true && formatMs(installed.ms)}
+        </>
+      )}
+    </span>
   );
 }
 

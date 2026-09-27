@@ -36,6 +36,8 @@
 
 html {
   color-scheme: light dark;
+  /* No pinch or double-tap zoom: iOS ignores `user-scalable=no` in index.html. */
+  touch-action: pan-x pan-y;
   /* The two surfaces: raised islands (sidebar, search box), and the page around them. */
   --editor-bg: light-dark(#ffffff, #18181b);
   --chrome-bg: light-dark(#fafafa, #0f0f11);
@@ -90,6 +92,13 @@ html[data-theme="dark"] {
   padding: 32px 16px 64px;
   @media (width >= 40rem) {
     padding-inline: 32px;
+  }
+  /* Under the install card. */
+  &:not(:first-child) {
+    padding-top: 16px;
+  }
+  & > :first-child {
+    margin-top: 0;
   }
   line-height: 1.65;
   color: light-dark(#27272a, #d4d4d8);

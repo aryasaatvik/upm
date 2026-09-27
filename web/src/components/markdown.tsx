@@ -27,8 +27,10 @@ export function loadMarkdown(): Promise<Renderer> {
 /**
  * Markdown keeps raw HTML, and a README is the publisher's, so DOMPurify strips scripts and
  * other XSS before it goes into the page. `base` resolves the README's relative links and images.
+ * `children` go above it, in the same scroll.
  */
-export function Markdown({ text, base }: { text: string; base: string }) {
+export function Markdown(props: { text: string; base: string; children?: ReactNode }) {
+  const { text, base } = props;
   const [loaded, setLoaded] = useState<Renderer | Error>();
   useEffect(() => {
     loadMarkdown().then(
@@ -47,6 +49,7 @@ export function Markdown({ text, base }: { text: string; base: string }) {
       className="h-full scroll-pt-(--covered-top) overflow-auto pt-(--covered-top) pb-(--covered-bottom)"
       onClick={jump}
     >
+      {props.children}
       <article className="readme" dangerouslySetInnerHTML={{ __html: html }} />
     </div>
   );

@@ -50,5 +50,9 @@ the browser's HTTP cache does the revalidating. No lockfile is kept between load
 each resolves against the registry, as a project with no `upm.lock` does, and hands its lockfile
 to the install. A package the store already has shows its files from there, without a download.
 
+`public/install.sh` and `public/install.ps1` are the installers behind
+`curl -fsSL https://upm.sh/install.sh | sh` and `irm https://upm.sh/install.ps1 | iex`, which the
+install card (`src/components/install.ts`) offers next to `npm i -g upm`.
+
 `public/og.png`, the Open Graph image, is rendered by `scripts/og.ts` with
 [takumi](https://github.com/kane50613/takumi). Run `node scripts/og.ts` after changing it.

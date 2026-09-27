@@ -1,9 +1,18 @@
 // The editor pane: the selected file, or what stands in for it.
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 import type { View } from "../app.tsx";
 import { Code, formatBytes, preview } from "./code.tsx";
-import { LOCK } from "./files.tsx";
+import { LOCK, treePath } from "./files.tsx";
+import { bindInstall, installCard } from "./install.ts";
 import type { InstalledFile } from "../lib/install.ts";
 import { Markdown, MarkdownSkeleton } from "./markdown.tsx";
 import { ErrorBox, IconButton, Icon, Waiting } from "./ui.tsx";
@@ -42,7 +51,16 @@ export function Editor(props: {
   if (file) {
     // The real name and version: an alias installs under another name.
     const pkg = view.manifest && !(view.manifest instanceof Error) ? view.manifest : view.top;
-    return <FileView path={selected} file={file} pkg={`${pkg.name}@${pkg.version}`} />;
+    // The package's own README opens with how to install upm, and it.
+    const readme = /^readme\.(md|markdown)$/i.test(selected.slice(treePath(view.name).length));
+    return (
+      <FileView
+        path={selected}
+        file={file}
+        pkg={`${pkg.name}@${pkg.version}`}
+        install={readme ? view.name : undefined}
+      />
+    );
   }
   if (view.tarball instanceof Error) {
     return (
@@ -56,7 +74,14 @@ export function Editor(props: {
   return <Waiting>Select a file</Waiting>;
 }
 
-function FileView({ path, file, pkg }: { path: string; file: InstalledFile; pkg: string }) {
+function FileView(props: {
+  path: string;
+  file: InstalledFile;
+  pkg: string;
+  /** Shows the install card above the rendered Markdown, with a command to add this package. */
+  install?: string;
+}) {
+  const { path, file, pkg } = props;
   const shown = useMemo(() => preview(file.path, file.data), [file]);
   const [source, setSource] = useState(false);
   const markdown = shown.lang === "md" || shown.lang === "markdown";
@@ -83,11 +108,26 @@ function FileView({ path, file, pkg }: { path: string; file: InstalledFile; pkg:
       }
     >
       {markdown && !source ? (
-        <Markdown text={shown.text} base={`https://cdn.jsdelivr.net/npm/${pkg}/${dir}`} />
+        <Markdown text={shown.text} base={`https://cdn.jsdelivr.net/npm/${pkg}/${dir}`}>
+          {props.install && <InstallCard spec={props.install} />}
+        </Markdown>
       ) : (
         <Code {...shown} />
       )}
     </Frame>
+  );
+}
+
+/** The command that adds this package, as wide as the README under it. */
+function InstallCard({ spec }: { spec: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => bindInstall(ref.current!), []);
+  return (
+    <div
+      ref={ref}
+      className="mx-auto max-w-[860px] px-4 pt-8 sm:px-8"
+      dangerouslySetInnerHTML={{ __html: installCard("", spec) }}
+    />
   );
 }
 
