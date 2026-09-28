@@ -94,8 +94,14 @@ export function checkPlacement(resolution: Resolution, placement: Placement): vo
     }))
       edge(path, name, version, name in (pkg.peers ?? {}));
     for (const [name, range] of Object.entries(pkg.peerDependencies ?? {})) {
-      if (name in pkg.dependencies && !(name in (pkg.peers ?? {}))) continue;
+      if (
+        (name in pkg.dependencies || name in (pkg.optionalDependencies ?? {})) &&
+        !(name in (pkg.peers ?? {}))
+      )
+        continue;
       const found = lookup(placement, parentOf(path), name);
+      if (!found && pkg.peers?.[name] !== "optional")
+        throw new UpmError("EPLACE", `${path} requires missing peer ${name}@${range}`);
       if (found && !satisfies(resolution.packages[found]?.version ?? "", range))
         throw new UpmError("EPLACE", `${path} peer ${name}@${range} resolves to ${found}`);
     }
@@ -145,9 +151,15 @@ export function hoist(resolution: Resolution, previous?: Placement): Placement {
         return version && lookup(placed, parentOf(path), name) !== keyFor(name, version);
       }) ||
       Object.entries(pkg.peerDependencies ?? {}).some(([name, range]) => {
-        if (name in pkg.dependencies && !(name in (pkg.peers ?? {}))) return false;
+        if (
+          (name in pkg.dependencies || name in (pkg.optionalDependencies ?? {})) &&
+          !(name in (pkg.peers ?? {}))
+        )
+          return false;
         const found = lookup(placed, parentOf(path), name);
-        return !!found && !satisfies(resolution.packages[found]?.version ?? "", range);
+        return found
+          ? !satisfies(resolution.packages[found]?.version ?? "", range)
+          : pkg.peers?.[name] !== "optional";
       });
     if (brokenPeer) placed.delete(path);
   }
@@ -197,10 +209,18 @@ export function hoist(resolution: Resolution, previous?: Placement): Placement {
         const candidate = resolution.packages[key]!;
         const peersFit = Object.entries(candidate.peerDependencies ?? {}).every(
           ([peerName, range]) => {
-            if (peerName in candidate.dependencies && !(peerName in (candidate.peers ?? {})))
+            if (
+              (peerName in candidate.dependencies ||
+                peerName in (candidate.optionalDependencies ?? {})) &&
+              !(peerName in (candidate.peers ?? {}))
+            )
               return true;
             const found = placed.get(`${dir ? `${dir}/` : ""}node_modules/${peerName}`);
-            return !found || satisfies(resolution.packages[found]?.version ?? "", range);
+            return found
+              ? satisfies(resolution.packages[found]?.version ?? "", range)
+              : candidate.peers?.[peerName] === "optional" ||
+                  peerName in candidate.dependencies ||
+                  peerName in (candidate.optionalDependencies ?? {});
           },
         );
         const valid =

@@ -99,6 +99,35 @@ describe("npm placement", () => {
     expect(next.get("node_modules/app/node_modules/host")).toBe("host@1.0.0");
     checkPlacement(changed, next);
   });
+  it("requires a declared peer host unless the peer is optional", () => {
+    const resolution: Resolution = {
+      root: { dependencies: { plugin: "1.0.0" } },
+      warnings: [],
+      packages: {
+        "plugin@1.0.0": {
+          name: "plugin",
+          version: "1.0.0",
+          resolved: "",
+          integrity: "",
+          dependencies: {},
+          optional: false,
+          dev: false,
+          bin: {},
+          peerDependencies: { host: "^1" },
+          peers: { host: "required" },
+        },
+      },
+    };
+    const placement = new Map([["node_modules/plugin", "plugin@1.0.0"]]);
+    expect(() => checkPlacement(resolution, placement)).toThrowError(
+      expect.objectContaining({ code: "EPLACE", message: expect.stringContaining("host@^1") }),
+    );
+    expect(() => hoist(resolution)).toThrowError(expect.objectContaining({ code: "EPLACE" }));
+
+    resolution.packages["plugin@1.0.0"]!.peers = { host: "optional" };
+    expect(() => checkPlacement(resolution, placement)).not.toThrow();
+    expect(hoist(resolution)).toEqual(placement);
+  });
   it("reports an unrepresentable peer", () => {
     const resolution: Resolution = {
       root: { dependencies: { plugin: "1.0.0", host: "1.0.0" } },
