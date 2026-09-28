@@ -1,8 +1,9 @@
 import { UpmError } from "./error.ts";
-import { readForeign } from "./foreign-lock-core.ts";
+import { readForeign } from "./foreign-lock.ts";
 import { checkPlacement, hoist } from "./hoist.ts";
 import { fromLockfile } from "./lock.ts";
 import {
+  carryPackageLockEntries,
   formatPackageLock,
   fromPackageLock,
   parsePackageLock,
@@ -105,6 +106,7 @@ export async function lockProject(
     }
     abort();
     const placement = hoist(resolution, previousPlacement);
+    if (previous && previousPlacement) carryPackageLockEntries(previous, resolution);
     const text = formatPackageLock(toPackageLock(resolution, placement, input.manifest));
     return { text, changed: text !== input.lock, warnings: [...warnings, ...resolution.warnings] };
   } catch (error) {

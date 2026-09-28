@@ -92,6 +92,33 @@ describe("dist", () => {
         (await Promise.all(imports.map((match) => visit(join(file, "..", match[1]!))))).join("")
       );
     };
+    const sourceFiles = new Set<string>();
+    const sourceImports = async (file: string): Promise<void> => {
+      if (sourceFiles.has(file)) return;
+      sourceFiles.add(file);
+      const source = await readFile(file, "utf8");
+      for (const match of source.matchAll(
+        /^\s*(?!(?:import|export)\s+type\b)(?:import|export)\s+(?:[^"'\n]*?\s+from\s+)?["'](\.[^"']+)["']/gm,
+      )) {
+        await sourceImports(join(file, "..", match[1]!));
+      }
+    };
+    await sourceImports(join(import.meta.dirname, "../src/worker.ts"));
+    const forbidden = [
+      "api.ts",
+      "store.ts",
+      "link.ts",
+      "state.ts",
+      "unpack.ts",
+      "unpack-pool.ts",
+      "unpack-worker.ts",
+      "shim.ts",
+      "gc.ts",
+      "workers.ts",
+      "cli.ts",
+    ];
+    const imported = new Set([...sourceFiles].map((file) => file.split("/").at(-1)));
+    expect(forbidden.filter((file) => imported.has(file))).toEqual([]);
     const code = await visit(join(out, "worker", "worker.mjs"));
     expect([...seen].map((file) => file.split("/").at(-1))).not.toContain("main.mjs");
     expect([...seen].map((file) => file.split("/").at(-1))).not.toContain("unpack.mjs");

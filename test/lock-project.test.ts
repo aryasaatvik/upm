@@ -26,6 +26,21 @@ describe("lockProject", () => {
     ).rejects.toMatchObject({ code: "ELOCKSTALE" });
   });
 
+  it("keeps an unchanged update byte for byte", async () => {
+    const manifest = JSON.parse(await fixture("nested", "package.json"));
+    const lock = await fixture("nested", "package-lock.json");
+    const result = await lockProject({
+      manifest,
+      lock,
+      mode: "update",
+      registry: "https://registry.test",
+      fetch: () => {
+        throw new Error("unchanged update must use locked versions");
+      },
+    });
+    expect(result).toEqual({ text: lock, changed: false, warnings: [] });
+  });
+
   it("updates one direct package while keeping unrelated versions and placements", async () => {
     const manifest = JSON.parse(await fixture("nested", "package.json"));
     const lock = await fixture("nested", "package-lock.json");

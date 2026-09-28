@@ -203,6 +203,12 @@ export function fromPackageLock(
   return { resolution, placement };
 }
 
+/** Carry npm's verbatim path entries through an updated resolution. */
+export function carryPackageLockEntries(from: Resolution, to: Resolution): void {
+  const entries = metadata.get(from);
+  if (entries) metadata.set(to, entries);
+}
+
 /** Original locations are the best stable choice when an npm lock supplied this graph. */
 export function npmPlacement(resolution: Resolution): Placement | undefined {
   const entries = metadata.get(resolution);

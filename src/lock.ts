@@ -1,13 +1,16 @@
 // Our own flat lockfile. npm's v3 `packages` map is keyed by on-disk path, which the
 // `.upm` symlink layout has no stable equivalent of; ours is keyed by identity.
+import { builtin } from "./builtin.ts";
 import { normalizeBin } from "./normalize-bin.ts";
 import { registryBase, tarballUrl } from "./registry.ts";
 import type { BaseFor } from "./registry.ts";
+import { pid } from "./runtime.ts";
 import { parse } from "./semver.ts";
 import { declaredSpecs, declaredWorkspaces, localPath, localShape } from "./resolve.ts";
 import type { PeerKind, Resolution, ResolvedPackage, RootManifest, RootSpecs } from "./resolve.ts";
 import { parseDep } from "./spec.ts";
 import type { Spec } from "./spec.ts";
+import { replaceFile, rmIfExists, trace } from "./util.ts";
 
 export const LOCKFILE = "upm.lock";
 
@@ -222,7 +225,32 @@ export function parseLockfile(text: string): Lockfile {
   } catch (error) {
     throw fail(`${LOCKFILE} is not valid JSON: ${(error as Error).message}`);
   }
+  trace("lockparsed");
   return validate(parsed);
+}
+
+export async function readLockfile(dir: string): Promise<Lockfile | undefined> {
+  const file = builtin.path.join(dir, LOCKFILE);
+  let text: string;
+  try {
+    text = await builtin.fsp.readFile(file, "utf8");
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") return undefined;
+    throw fail(`cannot read ${file}: ${(error as Error).message}`);
+  }
+  return parseLockfile(text);
+}
+
+export async function writeLockfile(dir: string, lock: Lockfile): Promise<void> {
+  const file = builtin.path.join(dir, LOCKFILE);
+  const temp = `${file}.${pid}-${globalThis.crypto.randomUUID()}.tmp`;
+  try {
+    await builtin.fsp.writeFile(temp, formatLockfile(lock));
+    await replaceFile(temp, file); // atomic, so a reader never sees a half-written lockfile
+  } catch (error) {
+    await rmIfExists(temp, { force: true });
+    throw fail(`cannot write ${file}: ${(error as Error).message}`);
+  }
 }
 
 /** Sections in a fixed order, and `workspaces` only when there are any. */
@@ -615,13 +643,4 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function fail(message: string): Error {
   return Object.assign(new Error(message), { code: "ELOCK" });
-}
-
-/** Filesystem operations load only when an installer actually reads or writes a lock. */
-export async function readLockfile(dir: string): Promise<Lockfile | undefined> {
-  return (await import("./lock-io.ts")).readLockfile(dir);
-}
-
-export async function writeLockfile(dir: string, lock: Lockfile): Promise<void> {
-  return (await import("./lock-io.ts")).writeLockfile(dir, lock);
 }
