@@ -42,10 +42,7 @@ export type Placement = Map<string, string>;
 export type PackageJson = RootManifest;
 
 const groups = ["dependencies", "devDependencies", "optionalDependencies"] as const;
-const metadata = new WeakMap<
-  Resolution,
-  { top: PackageLock; entries: Map<string, PackageLockEntry> }
->();
+const metadata = new WeakMap<Resolution, Map<string, PackageLockEntry>>();
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 const pathName = (path: string): string => path.slice(path.lastIndexOf("node_modules/") + 13);
@@ -192,7 +189,7 @@ export function fromPackageLock(
     dependencies: { ...rootEdges.required, ...rootEdges.optional },
   };
   const resolution: Resolution = { root, packages, warnings: [] };
-  metadata.set(resolution, { top: lock, entries });
+  metadata.set(resolution, entries);
   setPackageMetadata(
     resolution,
     new Map([...placement].map(([path, key]) => [key, lock.packages[path]!])),
@@ -202,11 +199,9 @@ export function fromPackageLock(
 
 /** Original locations are the best stable choice when an npm lock supplied this graph. */
 export function npmPlacement(resolution: Resolution): Placement | undefined {
-  const source = metadata.get(resolution);
-  if (!source) return undefined;
-  return new Map(
-    [...source.entries].map(([path, entry]) => [path, `${pathName(path)}@${entry.version}`]),
-  );
+  const entries = metadata.get(resolution);
+  if (!entries) return undefined;
+  return new Map([...entries].map(([path, entry]) => [path, `${pathName(path)}@${entry.version}`]));
 }
 
 export function toPackageLock(
@@ -216,7 +211,7 @@ export function toPackageLock(
 ): PackageLock {
   const source = metadata.get(resolution);
   const packages: Record<string, PackageLockEntry> = {};
-  packages[""] = source?.top.packages[""] ?? {
+  packages[""] = {
     ...(manifest.name && { name: manifest.name }),
     ...(manifest.version && { version: manifest.version }),
     ...Object.fromEntries(groups.filter((g) => manifest[g]).map((g) => [g, manifest[g]])),
@@ -226,9 +221,13 @@ export function toPackageLock(
   for (const [path, key] of placement) {
     const pkg = resolution.packages[key];
     if (!pkg) throw new UpmError("EPLACE", `placement refers to absent package ${key}`);
-    const original = source?.entries.get(path);
+    const original = source?.get(path);
     const extra = packageMetadata(resolution, key);
-    if (original) {
+    if (
+      original &&
+      key === `${pathName(path)}@${original.version}` &&
+      (original.integrity ?? "") === pkg.integrity
+    ) {
       packages[path] = original;
       continue;
     }

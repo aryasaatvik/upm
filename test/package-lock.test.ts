@@ -36,4 +36,27 @@ describe("npm v3 package locks", () => {
       expect.objectContaining({ code: "ELOCKSTALE" }),
     );
   });
+  it("writes a changed package at the same path and the current root manifest", async () => {
+    const lock = parsePackageLock(await fixture("dev-optional", "package-lock.json"));
+    const manifest = JSON.parse(await fixture("dev-optional", "package.json"));
+    const { resolution, placement } = fromPackageLock(lock, manifest);
+    const old = resolution.packages["is-number@7.0.0"]!;
+    delete resolution.packages["is-number@7.0.0"];
+    resolution.packages["is-number@6.0.0"] = {
+      ...old,
+      version: "6.0.0",
+      resolved: "https://registry.npmjs.org/is-number/-/is-number-6.0.0.tgz",
+      integrity: "sha512-updated",
+    };
+    placement.set("node_modules/is-number", "is-number@6.0.0");
+    manifest.optionalDependencies["is-number"] = "^6.0.0";
+
+    const written = toPackageLock(resolution, placement, manifest);
+    expect(written.packages[""]?.optionalDependencies?.["is-number"]).toBe("^6.0.0");
+    expect(written.packages["node_modules/is-number"]).toMatchObject({
+      version: "6.0.0",
+      integrity: "sha512-updated",
+    });
+    expect(written.packages["node_modules/is-number"]?.resolved).toContain("is-number-6.0.0");
+  });
 });
