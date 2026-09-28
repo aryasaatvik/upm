@@ -9,7 +9,7 @@ import { extractTar } from "./tar.ts";
 import { createLimiter } from "./limit.ts";
 import { pid } from "./runtime.ts";
 import { sizeOfSync } from "./util.ts";
-import { now, rmSyncIfExists, tick, tracing } from "./util.ts";
+import { now, rmIfExists, rmSyncIfExists, tick, tracing } from "./util.ts";
 
 // Content is hardlinked into every project sharing this store, so a write through any of
 // those links would corrupt all of them. Read-only makes that fail instead of spread.
@@ -210,11 +210,7 @@ export function createWriter(dir: string, options: WriterOptions = {}): Writer {
       const taken = code === "EEXIST" || code === "EPERM";
       const stale = taken && (force || sizeOfSync(file) !== data.length);
       if (stale && (await replaceReadOnly(temp, file, mode, rename))) return;
-      try {
-        await rm(temp, { force: true });
-      } catch (removeError) {
-        if ((removeError as { code?: string }).code !== "ENOENT") throw removeError;
-      }
+      await rmIfExists(temp, { force: true }, rm);
       // Read again: a concurrent writer may have finished it meanwhile.
       if (!taken || sizeOfSync(file) !== data.length) throw wrapped(error, `write ${file}`);
     }

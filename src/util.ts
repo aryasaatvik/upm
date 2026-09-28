@@ -175,10 +175,14 @@ export function now(): number {
 /** workerd's filesystem may throw ENOENT even when rm receives force: true. */
 export async function rmIfExists(
   path: string,
-  options: import("node:fs").RmOptions,
+  options: import("node:fs").RmOptions & { force: true },
+  remove: (
+    path: string,
+    options: import("node:fs").RmOptions & { force: true },
+  ) => Promise<void> = builtin.fsp.rm,
 ): Promise<void> {
   try {
-    await builtin.fsp.rm(path, options);
+    await remove(path, options);
   } catch (error) {
     if ((error as { code?: string }).code !== "ENOENT") throw error;
   }

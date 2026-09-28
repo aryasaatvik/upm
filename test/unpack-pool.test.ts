@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { builtin } from "../src/builtin.ts";
 import { hashOf } from "./hash.ts";
 import type { Pool, Unpack } from "../src/unpack-pool.ts";
 import { createPool, poolSize, WORKER_DIED } from "../src/unpack-pool.ts";
@@ -554,6 +555,34 @@ describe("createPool with a big tarball", { timeout }, () => {
     expect(index).toEqual(await alone(tarball));
     expect(hits).toHaveLength(2);
     expect(await contents(dir)).toEqual(await contents(join(dir, "alone")));
+  });
+
+  it("keeps the worker failure when temp cleanup reports ENOENT", async () => {
+    const tarball = hugeTarball("missing-temp");
+    const hits: string[] = [];
+    const store = createStore({
+      dir,
+      workers: 4,
+      workerEntry: PART_DIES,
+      fetch: serve(new Map([["https://reg/p.tgz", tarball]]), hits),
+    });
+    const remove = builtin.fs.rmSync.bind(builtin.fs);
+    let missing = 0;
+    const mocked = vi.spyOn(builtin.fs, "rmSync").mockImplementation((path, options) => {
+      remove(path, options);
+      if (String(path).endsWith(".tmp")) {
+        missing++;
+        throw Object.assign(new Error("missing temp"), { code: "ENOENT" });
+      }
+    });
+    try {
+      const { index } = await store.add("https://reg/p.tgz", hashOf(tarball));
+      expect(index.files.length).toBeGreaterThan(0);
+      expect(hits).toHaveLength(2);
+      expect(missing).toBeGreaterThan(0);
+    } finally {
+      mocked.mockRestore();
+    }
   });
 
   it("keeps a dropped stream's abort away from the stream that took its worker", async () => {
