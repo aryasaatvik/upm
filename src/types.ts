@@ -21,6 +21,8 @@ export interface Manifest {
   dist: Dist;
   deprecated?: string;
   hasInstallScript?: boolean;
+  license?: string | { type: string };
+  funding?: string | Record<string, unknown>;
 }
 
 export interface Packument {

@@ -1,4 +1,5 @@
 import { UpmError } from "./error.ts";
+import { satisfies } from "./semver.ts";
 import { lookup, npmPlacement } from "./package-lock.ts";
 import type { Placement } from "./package-lock.ts";
 import type { Resolution, ResolvedPackage } from "./resolve.ts";
@@ -39,7 +40,16 @@ export function checkPlacement(resolution: Resolution, placement: Placement): vo
       ...pkg.optionalDependencies,
     }))
       edge(path, name, version, name in (pkg.peers ?? {}));
+    for (const [name, range] of Object.entries(pkg.peerDependencies ?? {})) {
+      if (name in pkg.dependencies && !(name in (pkg.peers ?? {}))) continue;
+      const found = lookup(placement, parentOf(path), name);
+      if (found && !satisfies(resolution.packages[found]?.version ?? "", range))
+        throw new UpmError("EPLACE", `${path} peer ${name}@${range} resolves to ${found}`);
+    }
   }
+  const placedKeys = new Set(placement.values());
+  for (const key of Object.keys(resolution.packages))
+    if (!placedKeys.has(key)) throw new UpmError("EPLACE", `${key} has no placement`);
 }
 
 /** Place root edges first, then each installed node's edges, preferring shared ancestors. */
@@ -54,7 +64,7 @@ export function hoist(resolution: Resolution, previous?: Placement): Placement {
     }
   }
   const placed: Placement = new Map();
-  const queue: string[] = [];
+  const roots: string[] = [];
   const edges: { from: string; name: string; key: string; peer: boolean }[] = [];
   const direct = Object.entries(resolution.root.dependencies);
   for (const [name, version] of direct) {
@@ -64,15 +74,15 @@ export function hoist(resolution: Resolution, previous?: Placement): Placement {
     if (placed.has(path) && placed.get(path) !== key)
       throw new UpmError("EPLACE", `conflicting root ${name}`);
     placed.set(path, key);
-    queue.push(path);
+    roots.push(path);
     edges.push({ from: "", name, key, peer: false });
   }
   const visited = new Set<string>();
-  while (queue.length) {
-    const from = queue.shift()!;
+  const visit = (from: string): void => {
     const pkg = resolution.packages[placed.get(from)!]!;
-    if (visited.has(from)) continue;
+    if (visited.has(from)) return;
     visited.add(from);
+    const children: string[] = [];
     for (const [name, version] of Object.entries({
       ...pkg.dependencies,
       ...pkg.optionalDependencies,
@@ -97,9 +107,18 @@ export function hoist(resolution: Resolution, previous?: Placement): Placement {
         const path = `${dir ? `${dir}/` : ""}node_modules/${name}`;
         if (placed.has(path)) continue;
         placed.set(path, key);
-        const valid = edges.every(
-          (e) => lookup(placed, e.peer ? parentOf(e.from) : e.from, e.name) === e.key,
+        const candidate = resolution.packages[key]!;
+        const peersFit = Object.entries(candidate.peerDependencies ?? {}).every(
+          ([peerName, range]) => {
+            if (peerName in candidate.dependencies && !(peerName in (candidate.peers ?? {})))
+              return true;
+            const found = placed.get(`${dir ? `${dir}/` : ""}node_modules/${peerName}`);
+            return !found || satisfies(resolution.packages[found]?.version ?? "", range);
+          },
         );
+        const valid =
+          peersFit &&
+          edges.every((e) => lookup(placed, e.peer ? parentOf(e.from) : e.from, e.name) === e.key);
         placed.delete(path);
         if (valid) {
           chosen = path;
@@ -108,10 +127,12 @@ export function hoist(resolution: Resolution, previous?: Placement): Placement {
       }
       if (!chosen) throw new UpmError("EPLACE", `cannot place ${key} for ${from}`, { from, key });
       placed.set(chosen, key);
-      queue.push(chosen);
       edges.push({ from, name, key, peer });
+      children.push(chosen);
     }
-  }
+    for (const child of children) visit(child);
+  };
+  for (const path of roots) visit(path);
   checkPlacement(resolution, placed);
   return placed;
 }

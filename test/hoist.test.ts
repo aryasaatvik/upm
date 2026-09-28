@@ -20,6 +20,7 @@ describe("npm placement", () => {
         manifest,
       );
       expect(hoist(resolution)).toEqual(placement);
+      expect(hoist(structuredClone(resolution))).toEqual(placement);
       checkPlacement(resolution, placement);
       expect(hoist(resolution, placement)).toEqual(placement);
     });

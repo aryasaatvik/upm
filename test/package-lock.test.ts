@@ -1,7 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { fromPackageLock, parsePackageLock } from "../src/package-lock.ts";
+import {
+  fromPackageLock,
+  formatPackageLock,
+  parsePackageLock,
+  toPackageLock,
+} from "../src/package-lock.ts";
 
 const cases = ["alias", "dev-optional", "nested", "optional", "peer", "react", "starter"];
 const fixture = (name: string, file: string) =>
@@ -17,7 +22,7 @@ describe("npm v3 package locks", () => {
       const lock = parsePackageLock(text);
       const { resolution, placement } = fromPackageLock(lock, manifest);
       expect(placement.size).toBe(Object.keys(lock.packages).length - 1);
-      expect(Object.keys(resolution.packages).length).toBeGreaterThan(0);
+      expect(formatPackageLock(toPackageLock(resolution, placement, manifest))).toBe(text);
     });
   it("rejects old and malformed locks", () => {
     for (const text of ["{", "{}", '{"lockfileVersion":2,"packages":{}}'])

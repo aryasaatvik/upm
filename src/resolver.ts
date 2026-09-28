@@ -19,6 +19,11 @@ export type { PackumentView, PickOptions } from "./pick.ts";
 export type { Spec } from "./spec.ts";
 export type { Dist, Manifest, Packument } from "./types.ts";
 export { UpmError } from "./error.ts";
-export { parsePackageLock, fromPackageLock } from "./package-lock.ts";
+export {
+  parsePackageLock,
+  fromPackageLock,
+  toPackageLock,
+  formatPackageLock,
+} from "./package-lock.ts";
 export type { PackageLock, PackageLockEntry, PackageJson, Placement } from "./package-lock.ts";
 export { hoist, checkPlacement } from "./hoist.ts";

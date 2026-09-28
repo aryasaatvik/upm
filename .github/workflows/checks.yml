@@ -28,5 +28,7 @@ jobs:
         run: npx vitest run
       - if: runner.os == 'Linux'
         run: npm run lint
+      - if: runner.os == 'Linux'
+        run: node scripts/npm-ci-check.mjs
       # - uses: codecov/codecov-action@v5
       #   with: { token: "${{ secrets.CODECOV_TOKEN }}" }
