@@ -59,4 +59,31 @@ describe("npm v3 package locks", () => {
     });
     expect(written.packages["node_modules/is-number"]?.resolved).toContain("is-number-6.0.0");
   });
+  it("names both locations when one identity has two peer contexts", () => {
+    const dependencies = { plugin: "^1", host: "^1", b: "^1" };
+    const lock = parsePackageLock(
+      JSON.stringify({
+        lockfileVersion: 3,
+        packages: {
+          "": { dependencies },
+          "node_modules/plugin": { version: "1.0.0", peerDependencies: { host: ">=1" } },
+          "node_modules/host": { version: "1.0.0" },
+          "node_modules/b": { version: "1.0.0", dependencies: { plugin: "^1", host: "^2" } },
+          "node_modules/b/node_modules/host": { version: "2.0.0" },
+          "node_modules/b/node_modules/plugin": {
+            version: "1.0.0",
+            peerDependencies: { host: ">=1" },
+          },
+        },
+      }),
+    );
+    expect(() => fromPackageLock(lock, { dependencies })).toThrowError(
+      expect.objectContaining({
+        code: "EPLACE",
+        message: expect.stringMatching(
+          /plugin@1\.0\.0 appears in two peer contexts at node_modules\/plugin and node_modules\/b\/node_modules\/plugin/,
+        ),
+      }),
+    );
+  });
 });

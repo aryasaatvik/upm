@@ -146,6 +146,7 @@ export function fromPackageLock(
   };
   const packages: Record<string, ResolvedPackage> = {};
   const entries = new Map<string, PackageLockEntry>();
+  const firstPath = new Map<string, string>();
   for (const [path, key] of placement) {
     const entry = lock.packages[path]!;
     const edges = resolveEdges(path, entry);
@@ -172,13 +173,16 @@ export function fromPackageLock(
         JSON.stringify(prior.optionalDependencies ?? {}) !==
           JSON.stringify(pkg.optionalDependencies ?? {}) ||
         JSON.stringify(prior.peers ?? {}) !== JSON.stringify(pkg.peers ?? {}))
-    )
+    ) {
+      const context = prior.peers || pkg.peers ? "peer" : "dependency";
       throw new UpmError(
         "EPLACE",
-        `${key} has different dependency or peer contexts at multiple paths`,
-        { path, key },
+        `${key} appears in two ${context} contexts at ${firstPath.get(key)} and ${path}`,
+        { key, firstPath: firstPath.get(key), secondPath: path },
       );
+    }
     packages[key] ??= pkg;
+    firstPath.set(key, firstPath.get(key) ?? path);
     entries.set(path, entry);
   }
   const rootEdges = resolveEdges("", top);
