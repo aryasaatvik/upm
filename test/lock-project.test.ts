@@ -2,6 +2,9 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { lockProject } from "../src/lock-project.ts";
 import { parsePackageLock } from "../src/package-lock.ts";
+import { materialize } from "../src/materialize.ts";
+import { hashOf } from "./hash.ts";
+import { makeTarball } from "./tarball.ts";
 
 const fixture = (name: string, file: string) =>
   readFile(new URL(`./fixtures/package-lock/${name}/${file}`, import.meta.url), "utf8");
@@ -60,6 +63,52 @@ describe("lockProject", () => {
     expect(packages["node_modules/strip-ansi"]?.version).toBe("6.0.1");
     expect(packages[""]?.dependencies).toEqual(manifest.dependencies);
   });
+
+  it.each(["devDependencies", "dependencies"] as const)(
+    "recomputes placement flags when moving a package out of %s",
+    async (from) => {
+      const to = from === "devDependencies" ? "dependencies" : "devDependencies";
+      const archive = makeTarball([{ path: "index.js", data: "export default 1" }]);
+      const manifest = { [from]: { a: "1.0.0" } };
+      const lock = JSON.stringify({
+        lockfileVersion: 3,
+        packages: {
+          "": manifest,
+          "node_modules/a": {
+            version: "1.0.0",
+            resolved: "https://registry.test/a.tgz",
+            integrity: hashOf(archive),
+            license: "MIT",
+            ...(from === "devDependencies" && { dev: true }),
+          },
+        },
+      });
+      const next = { [to]: { a: "1.0.0" } };
+      const updated = await lockProject({
+        manifest: next,
+        lock,
+        mode: "update",
+        registry: "https://registry.test",
+        fetch: () => {
+          throw new Error("locked version must suffice");
+        },
+      });
+      const entry = parsePackageLock(updated.text).packages["node_modules/a"]!;
+      expect(entry.license).toBe("MIT");
+      expect(entry.dev).toBe(to === "devDependencies" ? true : undefined);
+      expect(entry.optional).toBeUndefined();
+      expect(entry.devOptional).toBeUndefined();
+      expect(entry.peer).toBeUndefined();
+      const installed = await materialize({
+        manifest: next,
+        lock: updated.text,
+        registry: "https://registry.test",
+        production: true,
+        fetch: async () => new Response(Buffer.from(archive)),
+      });
+      expect(installed.packages).toBe(to === "dependencies" ? 1 : 0);
+    },
+  );
 
   it("rejects unreadable foreign locks with a typed error", async () => {
     await expect(

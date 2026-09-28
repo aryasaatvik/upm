@@ -203,10 +203,23 @@ export function fromPackageLock(
   return { resolution, placement };
 }
 
-/** Carry npm's verbatim path entries through an updated resolution. */
+/** Carry npm's static path metadata, leaving topology flags to the new resolution. */
 export function carryPackageLockEntries(from: Resolution, to: Resolution): void {
   const entries = metadata.get(from);
-  if (entries) metadata.set(to, entries);
+  if (!entries) return;
+  metadata.set(
+    to,
+    new Map(
+      [...entries].map(([path, entry]) => {
+        const staticEntry = { ...entry };
+        delete staticEntry.dev;
+        delete staticEntry.optional;
+        delete staticEntry.devOptional;
+        delete staticEntry.peer;
+        return [path, staticEntry];
+      }),
+    ),
+  );
 }
 
 /** Original locations are the best stable choice when an npm lock supplied this graph. */
@@ -271,7 +284,11 @@ export function toPackageLock(
       key === `${pathName(path)}@${original.version}` &&
       (original.integrity ?? "") === pkg.integrity
     ) {
-      packages[path] = original;
+      packages[path] = {
+        ...original,
+        ...(pkg.dev && { dev: true }),
+        ...(pkg.optional && { optional: true }),
+      };
       continue;
     }
     const ownDependencies = { ...pkg.dependencies };
