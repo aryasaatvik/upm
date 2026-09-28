@@ -1,21 +1,11 @@
 core:changelogs:
-  - content: "---\npackages:\n  npm:@aryasaatvik/upm:\n    type: minor\n---\n\n### Start the upm fork for Cloudflare Workers\n\nPublish the scoped fork with Cloudflare Workers runtime fixes for gzip decompression and missing install state files.\n"
-    filename: 2026-09-28-fork-foundation.md
-    v: 0.0.0
-  - content: "---\npackages:\n  npm:@aryasaatvik/upm:\n    type: minor\n---\n\n### Support npm v3 package locks\n\nRead and write npm v3 lockfiles with placement preservation and check generated locks with npm ci.\n"
-    filename: 2026-09-28-package-lock.md
-    v: 0.0.0
-  - content: "---\npackages:\n  npm:@aryasaatvik/upm:\n    type: minor\n---\n\n### Add the Workers entry\n\nAdd the Workers-safe `./worker` entry for npm package locks and in-memory materialization.\n"
-    filename: 2026-09-28-worker-entry.md
+  - content: "---\npackages:\n  npm:@aryasaatvik/upm:\n    type: patch\n---\n\n### Harden npm v3 lock handling\n\nNormalize scalar platform fields, preserve legacy engines, handle absent optional edges, and reject unsupported package sources before fetching. Cover nested shadows and scoped package paths.\n"
+    filename: 2026-09-28-lock-hardening.md
     v: 0.0.0
 core:packages:
   - changelogIds:
-      - 2026-09-28-fork-foundation.md
-      - 2026-09-28-package-lock.md
-      - 2026-09-28-worker-entry.md
+      - 2026-09-28-lock-hardening.md
     id: npm:@aryasaatvik/upm
     updated: true
-npm:mark-latest:
-  - id: npm:@aryasaatvik/upm
 npm:packages:
   - id: npm:@aryasaatvik/upm
