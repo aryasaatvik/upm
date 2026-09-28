@@ -1,7 +1,8 @@
 import { Buffer } from "node:buffer";
 import { randomBytes } from "node:crypto";
 import { constants, gzipSync } from "node:zlib";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { builtin } from "../src/builtin.ts";
 import { extractTar, type TarEntry } from "../src/tar.ts";
 
 const BLOCK = 512;
@@ -294,6 +295,19 @@ describe("extractTar", () => {
     expect(text(entries[2]!)).toBe("b");
   });
 
+  it("streams a whole gzip when one-shot inflate reaches workerd's 128 MiB ceiling", async () => {
+    const archive = gzipSync(tar([{ name: "package/a.js", body: "hello" }]));
+    const gunzip = vi.spyOn(builtin.zlib, "gunzipSync").mockImplementationOnce(() => {
+      throw Object.assign(new Error("output too large"), { code: "ERR_BUFFER_TOO_LARGE" });
+    });
+    try {
+      expect(paths(await collect(archive, archive.length))).toEqual(["a.js"]);
+      expect(gunzip).toHaveBeenCalledWith(expect.anything(), { maxOutputLength: 134_217_728 });
+    } finally {
+      gunzip.mockRestore();
+    }
+  });
+
   it("reports a corrupt gzip as EBADTAR whether it came whole or in pieces", async () => {
     // One block is inflated in a single call, more than one through a stream; both must fail
     // the same way, with zlib's code named and nothing of zlib's own error shape leaking.
@@ -307,19 +321,15 @@ describe("extractTar", () => {
     });
   });
 
-  it("refuses a gzip that inflates past the ceiling in one call", async () => {
+  it("streams a highly compressed whole gzip beyond the one-shot ceiling", async () => {
     // 1 GiB of zeros is under 1 MiB gzipped, so a whole block of it takes the one-shot path.
-    // `maxOutputLength` is a ceiling, not a pre-check: zlib inflates up to it (~1 GB held,
-    // ~0.7 s) and throws on the byte past it. The stream is lazy: it inflates only what the
-    // tar reader asks for, and this reader stops at the first zero blocks.
+    // One-shot inflation reaches workerd's 128 MiB ceiling, then streaming starts. The
+    // tar reader stops at the first zero blocks, so it does not consume the whole bomb.
     // Run-length strategy: a quarter of the time to compress a gigabyte of the same byte.
     const bomb = gzipSync(Buffer.alloc(1024 * 1024 * 1024 + 1), { strategy: constants.Z_RLE });
     expect(bomb.length).toBeLessThan(1024 * 1024);
 
-    await expect(collect(bomb, bomb.length)).rejects.toMatchObject({
-      code: "EBADTAR",
-      message: /inflates past/,
-    });
+    expect(await collect(bomb, bomb.length)).toEqual([]);
     expect(await collect(bomb, 64 * 1024)).toEqual([]);
   });
 

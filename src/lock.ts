@@ -10,7 +10,7 @@ import { declaredSpecs, declaredWorkspaces, localPath, localShape } from "./reso
 import type { PeerKind, Resolution, ResolvedPackage, RootManifest, RootSpecs } from "./resolve.ts";
 import { parseDep } from "./spec.ts";
 import type { Spec } from "./spec.ts";
-import { replaceFile, trace } from "./util.ts";
+import { replaceFile, rmIfExists, trace } from "./util.ts";
 
 export const LOCKFILE = "upm.lock";
 
@@ -248,7 +248,7 @@ export async function writeLockfile(dir: string, lock: Lockfile): Promise<void> 
     await builtin.fsp.writeFile(temp, formatLockfile(lock));
     await replaceFile(temp, file); // atomic, so a reader never sees a half-written lockfile
   } catch (error) {
-    await builtin.fsp.rm(temp, { force: true });
+    await rmIfExists(temp, { force: true });
     throw fail(`cannot write ${file}: ${(error as Error).message}`);
   }
 }

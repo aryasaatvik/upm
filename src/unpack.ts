@@ -9,7 +9,7 @@ import { extractTar } from "./tar.ts";
 import { createLimiter } from "./limit.ts";
 import { pid } from "./runtime.ts";
 import { sizeOfSync } from "./util.ts";
-import { now, tick, tracing } from "./util.ts";
+import { now, rmSyncIfExists, tick, tracing } from "./util.ts";
 
 // Content is hardlinked into every project sharing this store, so a write through any of
 // those links would corrupt all of them. Read-only makes that fail instead of spread.
@@ -210,7 +210,11 @@ export function createWriter(dir: string, options: WriterOptions = {}): Writer {
       const taken = code === "EEXIST" || code === "EPERM";
       const stale = taken && (force || sizeOfSync(file) !== data.length);
       if (stale && (await replaceReadOnly(temp, file, mode, rename))) return;
-      await rm(temp, { force: true });
+      try {
+        await rm(temp, { force: true });
+      } catch (removeError) {
+        if ((removeError as { code?: string }).code !== "ENOENT") throw removeError;
+      }
       // Read again: a concurrent writer may have finished it meanwhile.
       if (!taken || sizeOfSync(file) !== data.length) throw wrapped(error, `write ${file}`);
     }
@@ -403,7 +407,7 @@ export function createWriter(dir: string, options: WriterOptions = {}): Writer {
         const target = blobPath(file.blob!);
         if (written.has(target)) {
           // The same content twice in one part: the first temp became the blob, this one goes.
-          builtin.fs.rmSync(file.temp, { force: true });
+          rmSyncIfExists(file.temp, { force: true });
           continue;
         }
         written.add(target);
@@ -435,7 +439,7 @@ export function createWriter(dir: string, options: WriterOptions = {}): Writer {
     const fs = builtin.fs;
     try {
       if (!repair && sizeOfSync(target) === size) {
-        fs.rmSync(temp, { force: true });
+        rmSyncIfExists(temp, { force: true });
         const now = new Date();
         fs.utimesSync(target, now, now);
         return;
@@ -443,7 +447,7 @@ export function createWriter(dir: string, options: WriterOptions = {}): Writer {
       fs.chmodSync(temp, mode);
       fs.renameSync(temp, target);
     } catch (error) {
-      fs.rmSync(temp, { force: true });
+      rmSyncIfExists(temp, { force: true });
       throw wrapped(error, `write ${target}`);
     }
   }
@@ -451,7 +455,7 @@ export function createWriter(dir: string, options: WriterOptions = {}): Writer {
   function discard(parts: Part[]): void {
     for (const part of parts) {
       for (const file of part.files) {
-        if (file.temp) builtin.fs.rmSync(file.temp, { force: true });
+        if (file.temp) rmSyncIfExists(file.temp, { force: true });
       }
     }
   }
@@ -500,12 +504,12 @@ function createSpool(files: string): Spool {
       return { hash: `sha512-${hash.digest("base64")}`, temp };
     },
     drop(keep) {
-      for (const temp of temps) if (!keep(temp)) fs.rmSync(temp, { force: true });
+      for (const temp of temps) if (!keep(temp)) rmSyncIfExists(temp, { force: true });
     },
     abandon() {
       if (current) fs.closeSync(current.fd);
       current = undefined;
-      for (const temp of temps) fs.rmSync(temp, { force: true });
+      for (const temp of temps) rmSyncIfExists(temp, { force: true });
     },
   };
 }
@@ -544,7 +548,7 @@ function blocking(): Io {
   return {
     mkdir: async (path, options) => fs.mkdirSync(path, options),
     rename: async (from, to) => fs.renameSync(from, to),
-    rm: async (path, options) => fs.rmSync(path, options),
+    rm: async (path, options) => rmSyncIfExists(path, options),
     utimes: async (path, atime, mtime) => fs.utimesSync(path, atime, mtime),
     writeFile: async (file, data, options) => fs.writeFileSync(file, data, options),
   };

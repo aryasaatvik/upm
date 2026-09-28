@@ -32,6 +32,7 @@ const MAX_ARCHIVE = 1024 * 1024 * 1024;
  * one-shot call outgrows its buffer.
  */
 const INFLATE_STEP = 1024 * 1024;
+const MAX_ONESHOT = 128 * 1024 * 1024;
 /** Inflated bytes that may wait for the parser before the inflate pauses. */
 const INFLATE_AHEAD = 4 * INFLATE_STEP;
 const EMPTY = new Uint8Array(0);
@@ -213,10 +214,15 @@ async function* gunzipped(source: AsyncIterable<Uint8Array>): AsyncGenerator<Uin
   try {
     if (more?.done && start.length <= INFLATE_STEP && hasZlib()) {
       const t = tracing ? now() : 0;
-      const out = builtin.zlib.gunzipSync(start, { maxOutputLength: MAX_ARCHIVE });
-      if (tracing) tick("gunzip", now() - t);
-      yield out;
-      return;
+      try {
+        const out = builtin.zlib.gunzipSync(start, { maxOutputLength: MAX_ONESHOT });
+        if (tracing) tick("gunzip", now() - t);
+        yield out;
+        return;
+      } catch (error) {
+        if ((error as { code?: string }).code !== "ERR_BUFFER_TOO_LARGE") throw error;
+        // A whole compressed block can still expand beyond workerd's one-shot limit.
+      }
     }
     if (tracing) tick("streamed", 1);
     // A small tarball can declare gigabytes; refuse rather than fill memory. Counted here:

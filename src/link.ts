@@ -3,7 +3,17 @@
 import { builtin } from "./builtin.ts";
 import { storeKeys } from "./keys.ts";
 import { createLimiter } from "./limit.ts";
-import { alive, exists, linkArgs, list, trace, readLink, readLinkSync, sizeOf } from "./util.ts";
+import {
+  alive,
+  exists,
+  linkArgs,
+  list,
+  rmIfExists,
+  trace,
+  readLink,
+  readLinkSync,
+  sizeOf,
+} from "./util.ts";
 import { allDeps } from "./resolve.ts";
 import { pid } from "./runtime.ts";
 import type { ResolvedPackage, Resolution } from "./resolve.ts";
@@ -171,7 +181,7 @@ export async function linkTree(resolution: Resolution, options: LinkOptions): Pr
   const { dirname, join, normalize, relative, sep } = builtin.path;
   const normalized = new Map<string, string>();
   const heads = new Map<string, Promise<string | undefined>>();
-  const { lstat, mkdir, readdir, realpath, rename, rm, rmdir, stat, utimes } = builtin.fsp;
+  const { lstat, mkdir, readdir, realpath, rename, rmdir, stat, utimes } = builtin.fsp;
   const { copyFileSync, linkSync } = builtin.fs;
   const up = `..${sep}`;
   const limit = createLimiter(options.concurrency ?? 16);
@@ -433,7 +443,7 @@ export async function linkTree(resolution: Resolution, options: LinkOptions): Pr
       result.entries++;
       if (pooled) result.pooled++;
     } catch (error) {
-      await rm(temp, { recursive: true, force: true });
+      await rmIfExists(temp, { recursive: true, force: true });
       // Another install may have won the race; its entry is as good as ours.
       if (!(await exists(final))) throw error;
       result.reused++;
@@ -481,7 +491,7 @@ export async function linkTree(resolution: Resolution, options: LinkOptions): Pr
       pooled = await build(entry, temp, final);
     } catch (error) {
       // Before the swap, so the damaged entry is still in place — and must stay a failure.
-      await rm(temp, { recursive: true, force: true });
+      await rmIfExists(temp, { recursive: true, force: true });
       throw error;
     }
     // A concurrent install may have repaired it first and be mid-swap; either way our copy
@@ -493,17 +503,17 @@ export async function linkTree(resolution: Resolution, options: LinkOptions): Pr
     try {
       await rename(temp, final);
     } catch (error) {
-      await rm(temp, { recursive: true, force: true });
+      await rmIfExists(temp, { recursive: true, force: true });
       // The name is taken again. Only a build of this same key could have taken it, and a
       // built entry is renamed in whole, so it is as good as the one we just dropped.
       if (await exists(final)) {
-        await rm(retired, { recursive: true, force: true });
+        await rmIfExists(retired, { recursive: true, force: true });
         return false;
       }
       if (moved) await rename(retired, final).catch(() => {});
       throw error;
     }
-    await rm(retired, { recursive: true, force: true });
+    await rmIfExists(retired, { recursive: true, force: true });
     if (pooled) result.pooled++;
     return true;
   }
@@ -529,7 +539,7 @@ export async function linkTree(resolution: Resolution, options: LinkOptions): Pr
       const at = join(storeDir, found.name);
       const info = await stat(at).catch(() => undefined);
       if (!info || info.mtimeMs > cutoff) continue;
-      await rm(at, { recursive: true, force: true });
+      await rmIfExists(at, { recursive: true, force: true });
       result.removed++;
     }
   }
@@ -563,7 +573,7 @@ export async function linkTree(resolution: Resolution, options: LinkOptions): Pr
           return true;
         }
         // The pool let go of this entry part-built; start it over here.
-        await rm(temp, { recursive: true, force: true });
+        await rmIfExists(temp, { recursive: true, force: true });
       }
     }
     await buildHere(entry, temp, final);
@@ -897,7 +907,7 @@ export async function linkTree(resolution: Resolution, options: LinkOptions): Pr
       if (shims ? found.isDirectory() : !found.isSymbolicLink()) continue;
       if (keep.has(bin) || keep.has(scope + name)) continue;
       // Not recursive: this unlinks the link itself, never what it points at.
-      await rm(at, { force: true });
+      await rmIfExists(at, { force: true });
       if (bin === scope + name) result.removed++; // three shims, one bin
     }
   }
@@ -1054,7 +1064,7 @@ async function replaceLink(at: string, target: string, within: string): Promise<
   }
   for (let attempt = 0; ; attempt++) {
     if ((await readLink(at)) === target) return;
-    await builtin.fsp.rm(at, { recursive: true, force: true });
+    await rmIfExists(at, { recursive: true, force: true });
     try {
       return await symlinkAt(target, at);
     } catch (error) {
