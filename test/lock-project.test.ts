@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { lockProject } from "../src/lock-project.ts";
 import { parsePackageLock } from "../src/package-lock.ts";
 import { materialize } from "../src/materialize.ts";
+import { createRegistry } from "../src/registry.ts";
 import { hashOf } from "./hash.ts";
 import { makeTarball } from "./tarball.ts";
 
@@ -119,6 +120,31 @@ describe("lockProject", () => {
         from: { file: "bun.lock", text: "{" },
       }),
     ).rejects.toMatchObject({ code: "EFOREIGNLOCK" });
+  });
+
+  it.each([
+    ["ETIMEDOUT", "EREGISTRY"],
+    ["ETIMEOUT", "EREGISTRY"],
+    ["ENETWORK", "EREGISTRY"],
+    ["EREGISTRY", "EREGISTRY"],
+    ["EJSONPARSE", "EREGISTRY"],
+    ["EOFFLINE", "EREGISTRY"],
+    ["E404", "ENOTFOUND"],
+    ["ETARGET", "ENOTFOUND"],
+  ])("maps registry %s to %s", async (code, expected) => {
+    const registry = {
+      ...createRegistry({ registry: "https://registry.test" }),
+      pick: async (): Promise<never> => {
+        throw Object.assign(new Error(code), { code });
+      },
+    };
+    await expect(
+      lockProject({
+        manifest: { dependencies: { a: "^1.0.0" } },
+        mode: "update",
+        registry,
+      }),
+    ).rejects.toMatchObject({ code: expected });
   });
 
   it("aborts an in-flight registry request", async () => {

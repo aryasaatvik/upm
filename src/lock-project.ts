@@ -114,7 +114,11 @@ export async function lockProject(
     const code = (error as { code?: string }).code;
     if (code === "E404" || code === "ETARGET")
       throw new UpmError("ENOTFOUND", (error as Error).message);
-    if (code === "EREGISTRY" || code === "ETIMEOUT")
+    if (
+      ["EREGISTRY", "ETIMEDOUT", "ETIMEOUT", "ENETWORK", "EJSONPARSE", "EOFFLINE"].includes(
+        code ?? "",
+      )
+    )
       throw new UpmError("EREGISTRY", (error as Error).message);
     throw error;
   }
