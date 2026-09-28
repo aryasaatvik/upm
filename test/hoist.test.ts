@@ -137,6 +137,36 @@ describe("npm placement", () => {
     expect(() => checkPlacement(resolution, placement)).not.toThrow();
     expect(hoist(resolution)).toEqual(placement);
   });
+  it("nests a dependency below an intermediate shadow", () => {
+    const pkg = (name: string, version: string, dependencies: Record<string, string> = {}) => ({
+      name,
+      version,
+      resolved: "",
+      integrity: "",
+      dependencies,
+      optional: false,
+      dev: false,
+      bin: {},
+    });
+    const resolution: Resolution = {
+      root: { dependencies: { a: "1.0.0", b: "2.0.0", x: "1.0.0" } },
+      warnings: [],
+      packages: {
+        "a@1.0.0": pkg("a", "1.0.0", { b: "1.0.0", x: "2.0.0" }),
+        "b@1.0.0": pkg("b", "1.0.0", { x: "1.0.0" }),
+        "b@2.0.0": pkg("b", "2.0.0"),
+        "x@1.0.0": pkg("x", "1.0.0"),
+        "x@2.0.0": pkg("x", "2.0.0"),
+      },
+    };
+    const placement = hoist(resolution);
+    expect(placement.get("node_modules/x")).toBe("x@1.0.0");
+    expect(placement.get("node_modules/a/node_modules/x")).toBe("x@2.0.0");
+    expect(placement.get("node_modules/a/node_modules/b")).toBe("b@1.0.0");
+    expect(placement.get("node_modules/a/node_modules/b/node_modules/x")).toBe("x@1.0.0");
+    checkPlacement(resolution, placement);
+  });
+
   it("skips absent optional edges and rejects absent required edges", () => {
     const resolution: Resolution = {
       root: { dependencies: { a: "1.0.0" } },
