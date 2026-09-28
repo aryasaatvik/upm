@@ -5,7 +5,7 @@
 // `.bin`, so the tree still works when moved. Loaded on Windows alone: nothing else pays for it.
 import { builtin } from "./builtin.ts";
 import { pid } from "./runtime.ts";
-import { replaceFile } from "./util.ts";
+import { replaceFile, rmIfExists } from "./util.ts";
 
 /** `#!/usr/bin/env node`, `#!/usr/bin/env -S node --flag`, `#!/bin/sh -e`. Env settings are dropped. */
 const SHEBANG = /^#!\s*(?:\/usr\/bin\/env\s+(?:-S\s+)?(?:[^\s=]+=[^\s=]+\s+)*)?(\S+)(.*)$/;
@@ -119,7 +119,7 @@ export async function placeShims(
   shims: Map<string, [string, string][]>,
   fresh: boolean,
 ): Promise<void> {
-  const { rm, writeFile } = builtin.fsp;
+  const { writeFile } = builtin.fsp;
   for (const [name, files] of shims) {
     for (const [suffix, text] of files) {
       const file = builtin.path.join(dir, name + suffix);
@@ -132,7 +132,7 @@ export async function placeShims(
         );
         await writeFile(temp, text);
         await replaceFile(temp, file).catch(async (error: unknown) => {
-          await rm(temp, { force: true });
+          await rmIfExists(temp, { force: true });
           const message = `cannot write ${file}: ${(error as Error)?.message ?? error}`;
           throw Object.assign(new Error(message), { code: "ELINK" });
         });

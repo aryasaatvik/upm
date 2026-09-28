@@ -1,0 +1,38 @@
+name: Publish
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Version and publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: node ./upm install --frozen-lockfile
+
+      - name: Version and publish packages
+        run: npm run release:check && npm run tegami ci
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

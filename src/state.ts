@@ -5,7 +5,7 @@
 import { builtin } from "./builtin.ts";
 import { graphHash, shortHash } from "./keys.ts";
 import { pid } from "./runtime.ts";
-import { replaceFile } from "./util.ts";
+import { replaceFile, rmIfExists } from "./util.ts";
 import type { Resolution } from "./resolve.ts";
 
 export const STATE_FILE = ".upm.json";
@@ -164,7 +164,7 @@ export async function writeState(dir: string, state: InstallState): Promise<void
     await builtin.fsp.writeFile(temp, `${JSON.stringify(state, undefined, 2)}\n`);
     await replaceFile(temp, file); // atomic, so a reader never sees a half-written state
   } catch (error) {
-    await builtin.fsp.rm(temp, { force: true });
+    await rmIfExists(temp, { force: true });
     throw fail(`cannot write ${file}: ${(error as Error).message}`);
   }
 }
@@ -172,7 +172,7 @@ export async function writeState(dir: string, state: InstallState): Promise<void
 /** Called before a tree is touched: while we are rewriting it, its state is unknown. */
 export async function clearState(dir: string): Promise<void> {
   try {
-    await builtin.fsp.rm(statePath(dir), { force: true });
+    await rmIfExists(statePath(dir), { force: true });
   } catch (error) {
     throw fail(`cannot remove ${statePath(dir)}: ${(error as Error).message}`);
   }

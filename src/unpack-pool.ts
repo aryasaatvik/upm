@@ -8,7 +8,7 @@ import type { PackageIndex } from "./store.ts";
 import type { Part } from "./unpack.ts";
 import { assemble, SHARD_MIN } from "./unpack.ts";
 import type { Block, Ending, PartTask, UnpackFailure, UnpackTask } from "./unpack-worker.ts";
-import { trace } from "./util.ts";
+import { rmSyncIfExists, trace } from "./util.ts";
 import { unpackWorker } from "./workers.ts";
 
 /** Check a tarball against its integrity, then write its content. */
@@ -254,7 +254,7 @@ export function createPool(dir: string, options: PoolOptions = {}): Pool {
     // Big files a part would have moved into place wait under temp names; nobody will now.
     for (const part of task.shards?.parts ?? []) {
       for (const file of part.files) {
-        if (file.temp) builtin.fs.rmSync(file.temp, { force: true });
+        if (file.temp) rmSyncIfExists(file.temp, { force: true });
       }
     }
   }

@@ -13,6 +13,14 @@ A minimal, zero-dependency, npm-registry-compatible package manager.
   npm may run repo scripts.
 - Do not run e2e tests on web, user will do it via their dev server and manual testing
 
+## Fork conventions
+
+This is the `@aryasaatvik/upm` fork of `unjs/upm`. Keep changes to upstream files small and put new behavior in new modules where practical. To sync, create `chore/upstream-<yyyy-mm-dd>` from `main`, merge `upstream/main`, check the fork diff and tests, then merge the sync branch back to `main`.
+
+## Releases
+
+Write pending release notes in `.tegami/YYYY-MM-DD-<id>.md` with a `packages` entry for `npm:@aryasaatvik/upm` and a patch, minor or major bump. Run `npm run release:check` and `npm run tegami -- publish --dry-run` before release review. Tegami opens a version PR against `main`; after it is merged, `publish.yml` uses npm trusted publishing. The owner makes the first `0.1.0` publish manually and configures the trusted publisher before automated publishing can work. Tegami leaves `upm.lock` untouched during a version bump: npm is the publishing client, while upm owns dependency installation, and the root package version is not part of upm’s frozen dependency check.
+
 ## Runtime boundary
 
 No runtime `node:` imports. Get builtins lazily through `src/builtin.ts` so a command

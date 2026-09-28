@@ -14,6 +14,7 @@ import { builtin } from "./builtin.ts";
 import { at as written, CLASS, COLON, objectEnd, OPEN, QUOTE, space, stringEnd } from "./pluck.ts";
 import type { CacheMode, DocumentCache, Kept } from "./registry.ts";
 import { concat } from "./runtime.ts";
+import { rmSyncIfExists } from "./util.ts";
 
 export interface MetadataOptions {
   /** Where the documents are kept. */
@@ -136,7 +137,7 @@ export function createDocumentCache(options: MetadataOptions): DocumentCache {
       fs.renameSync(temp, file);
     } catch {
       // A cache that cannot be written only costs the next run a request.
-      fs.rmSync(temp, { force: true });
+      rmSyncIfExists(temp, { force: true });
     }
   }
 

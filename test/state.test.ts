@@ -2,7 +2,8 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import process from "node:process";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { builtin } from "../src/builtin.ts";
 import type { ResolvedPackage, Resolution } from "../src/resolve.ts";
 import {
   STATE_FILE,
@@ -244,6 +245,18 @@ describe("clearState", () => {
     await writeState(project, { version: 1, hash: "h", entries: [], complete: true, store: STORE });
     await clearState(project);
     expect(await readState(project)).toBeUndefined();
+  });
+
+  it("ignores ENOENT even when the filesystem ignores force", async () => {
+    const remove = vi
+      .spyOn(builtin.fsp, "rm")
+      .mockRejectedValueOnce(Object.assign(new Error("missing"), { code: "ENOENT" }));
+    try {
+      await expect(clearState(project)).resolves.toBeUndefined();
+      expect(remove).toHaveBeenCalledWith(statePath(project), { force: true });
+    } finally {
+      remove.mockRestore();
+    }
   });
 
   it("fails with ESTATE when the path cannot be removed", async () => {

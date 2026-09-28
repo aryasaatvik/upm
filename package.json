@@ -1,9 +1,9 @@
 {
-  "name": "upm",
-  "version": "1.2.0",
+  "name": "@aryasaatvik/upm",
+  "version": "0.0.0",
   "description": "A fast, tiny package manager for the npm registry, written in TypeScript.",
   "license": "MIT",
-  "repository": "unjs/upm",
+  "repository": "aryasaatvik/upm",
   "bin": {
     "upm": "./dist/upm.mjs",
     "upx": "./dist/upx.mjs"
@@ -21,6 +21,9 @@
     ".": "./dist/index.mjs",
     "./resolver": "./dist/resolver.mjs"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "obuild",
     "deps": "node ./upm install",
@@ -29,19 +32,20 @@
     "lint": "oxlint . && oxfmt --check .",
     "web": "node ./upm run -w web dev",
     "prepack": "npm run build",
-    "release": "npm test && npm run build && changelogen --release && npm publish && git push --follow-tags",
     "test": "npm run lint && npm run typecheck && vitest run --coverage",
-    "typecheck": "tsc --noEmit --skipLibCheck"
+    "typecheck": "tsc --noEmit --skipLibCheck",
+    "tegami": "node scripts/tegami.mts",
+    "release:check": "npm run lint && npm run typecheck && vitest run"
   },
   "devDependencies": {
     "@types/node": "latest",
     "@vitest/coverage-v8": "latest",
     "automd": "latest",
-    "changelogen": "latest",
     "jup": "latest",
     "obuild": "latest",
     "oxfmt": "latest",
     "oxlint": "latest",
+    "tegami": "^1.5.0",
     "typescript": "latest",
     "vitest": "latest"
   },

@@ -171,3 +171,27 @@ export function flushTrace(): void {
 export function now(): number {
   return performance.timeOrigin + performance.now();
 }
+
+/** workerd's filesystem may throw ENOENT even when rm receives force: true. */
+export async function rmIfExists(
+  path: string,
+  options: import("node:fs").RmOptions & { force: true },
+  remove: (
+    path: string,
+    options: import("node:fs").RmOptions & { force: true },
+  ) => Promise<void> = builtin.fsp.rm,
+): Promise<void> {
+  try {
+    await remove(path, options);
+  } catch (error) {
+    if ((error as { code?: string }).code !== "ENOENT") throw error;
+  }
+}
+
+export function rmSyncIfExists(path: string, options: import("node:fs").RmOptions): void {
+  try {
+    builtin.fs.rmSync(path, options);
+  } catch (error) {
+    if ((error as { code?: string }).code !== "ENOENT") throw error;
+  }
+}
