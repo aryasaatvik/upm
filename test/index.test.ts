@@ -22,13 +22,20 @@ describe("public api", () => {
 
   it("exports the portable resolver", () => {
     expect(Object.keys(resolver).sort()).toEqual([
+      "UpmError",
+      "checkPlacement",
       "createRegistry",
       "formatLockfile",
+      "formatPackageLock",
       "fromLockfile",
+      "fromPackageLock",
+      "hoist",
       "parseLockfile",
+      "parsePackageLock",
       "parseSpec",
       "resolveTree",
       "toLockfile",
+      "toPackageLock",
     ]);
   });
 });

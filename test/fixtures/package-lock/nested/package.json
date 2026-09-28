@@ -1,0 +1,8 @@
+{
+  "name": "fixture-nested",
+  "version": "1.0.0",
+  "dependencies": {
+    "ansi-regex": "^6.0.0",
+    "strip-ansi": "^6.0.0"
+  }
+}

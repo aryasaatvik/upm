@@ -234,6 +234,12 @@ import {
 // Experimental resolver API (works in browser too)
 import {
   createRegistry, // registry client that fetches packuments
+  parsePackageLock, // npm v3 package-lock.json text to object
+  fromPackageLock, // lock object to resolution and install placement
+  hoist, // place a resolution in node_modules
+  checkPlacement, // verify Node and peer dependency lookup
+  toPackageLock, // resolution and placement to npm v3 lock object
+  formatPackageLock, // npm-compatible JSON text
   formatLockfile, // lockfile object to text
   fromLockfile, // lockfile object to resolution
   parseLockfile, // lockfile text to object
@@ -258,6 +264,8 @@ thread and warns through `log`. The experimental `upm/resolver` entry provides
 the registry client, dependency resolver, and in-memory lockfile tools without
 requiring Node. It does not install files or read `.npmrc` for you. See
 [`src/resolver.ts`](src/resolver.ts) for its exports.
+The npm v3 lock APIs keep every package location; unsupported links and bundled
+entries raise `ELOCK`, while a changed root manifest raises `ELOCKSTALE`.
 
 ### Store backend
 

@@ -1,6 +1,7 @@
 // Walk a root package.json into a flat, deterministic set of `name@version` packages.
 // No hoisting and no placement: the stage 5 `.upm` layout makes both unnecessary.
 import { normalizeBin } from "./normalize-bin.ts";
+import type { PackageLockEntry } from "./package-lock.ts";
 import { builtin } from "./builtin.ts";
 import { maxSatisfying, parse, satisfies, validRange } from "./semver.ts";
 import { fromShasum } from "./integrity.ts";
@@ -73,6 +74,17 @@ export interface RootManifest {
   peerDependencies?: Record<string, string>;
   peerDependenciesMeta?: Record<string, { optional?: boolean }>;
   bin?: unknown;
+  engines?: Record<string, string>;
+  os?: string[];
+  cpu?: string[];
+  libc?: string[];
+  license?: Manifest["license"];
+  funding?: Manifest["funding"];
+  hasInstallScript?: boolean;
+  scripts?: Record<string, string>;
+  deprecated?: string;
+  bundleDependencies?: string[];
+  acceptDependencies?: Record<string, string>;
   workspaces?: string[] | { packages?: string[] };
 }
 
@@ -90,6 +102,19 @@ export interface Resolution {
   };
   packages: Record<string, ResolvedPackage>;
   warnings: string[];
+}
+
+const packageEntries = new WeakMap<Resolution, Map<string, PackageLockEntry>>();
+
+export function setPackageMetadata(
+  resolution: Resolution,
+  entries: Map<string, PackageLockEntry>,
+): void {
+  packageEntries.set(resolution, entries);
+}
+
+export function packageMetadata(resolution: Resolution, key: string): PackageLockEntry | undefined {
+  return packageEntries.get(resolution)?.get(key);
 }
 
 export interface Platform {
@@ -163,6 +188,7 @@ export async function resolveTree(
   const limit = createLimiter(options.concurrency ?? 32);
   const picks = new Map<string, Promise<Manifest>>(); // fetched name@range, or a tarball's source
   const records = new Map<string, ResolvedPackage>(); // name@version
+  const pickedEntries = new Map<string, PackageLockEntry>();
   const edges = new Map<string, Edge[]>(); // name@version (or ROOT) -> children
   const started = new Set<string>();
   const dead = new Map<string, unknown>(); // key -> why it cannot be installed
@@ -277,6 +303,15 @@ export async function resolveTree(
     source?: string,
   ): Promise<void> {
     const found = record(name, m, source);
+    pickedEntries.set(key, {
+      ...(m.name !== name && { name: m.name }),
+      ...(m.license && { license: m.license }),
+      ...(m.engines && { engines: m.engines }),
+      ...(m.funding && { funding: m.funding }),
+      ...(m.peerDependenciesMeta && { peerDependenciesMeta: m.peerDependenciesMeta }),
+      ...(m.hasInstallScript && { hasInstallScript: true }),
+      ...(m.deprecated && { deprecated: m.deprecated }),
+    });
     records.set(key, found);
     // The libc read is off the pick and does not hold the children; `onPick` gets it to wait
     // on, since a musl build is not this machine's until it is in. A tarball's package.json is
@@ -343,6 +378,8 @@ export async function resolveTree(
   function visitLocked(from: string, key: string): void {
     if (started.has(key)) return;
     started.add(key);
+    const entry = options.locked && packageMetadata(options.locked, key);
+    if (entry) pickedEntries.set(key, entry);
     const { dependencies, optionalDependencies = {}, ...pkg } = locked[key]!;
     const peers = pkg.peers ?? {};
     const found = { ...pkg, dependencies: {}, optional: true, dev: true };
@@ -617,7 +654,7 @@ export async function resolveTree(
   for (const e of edges.get(ROOT) ?? []) direct[e.name] = e.version;
   const specs = declaredSpecs(manifest);
   const patterns = declaredWorkspaces(manifest);
-  return {
+  const resolution: Resolution = {
     root: {
       name: manifest.name,
       version: manifest.version,
@@ -628,6 +665,8 @@ export async function resolveTree(
     packages,
     warnings: [...warnings].sort(),
   };
+  setPackageMetadata(resolution, pickedEntries);
+  return resolution;
 }
 
 /** What the resolution was made from, so `lock` can tell whether package.json moved. */

@@ -1,0 +1,10 @@
+{
+  "name": "fixture-dev-optional",
+  "version": "1.0.0",
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  },
+  "optionalDependencies": {
+    "is-number": "^7.0.0"
+  }
+}

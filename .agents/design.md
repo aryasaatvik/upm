@@ -27,10 +27,13 @@ requests. Preserve that property when changing the format. Dependency-group and
 peer information must also survive: production, optional failure handling and peer
 rebinding cannot be reconstructed from versions alone.
 
-Another manager's lockfile is read, never written, and no `upm.lock` appears beside it.
-A command that would change the tree there is refused: writing the choice anywhere else
-would leave two lockfiles that disagree. What such a file cannot say is taken from the
-tarball, never guessed; what it holds that upm cannot install is refused, not dropped.
+The upm CLI install path reads another manager's lockfile without writing it or placing
+`upm.lock` beside it. A CLI command that would change that tree is refused: writing the
+choice elsewhere would leave two lockfiles that disagree. The fork's explicit
+`upm/resolver` API is the exception for npm v3: `toPackageLock` and
+`formatPackageLock` may write `package-lock.json`, as a future `lockProject` may.
+What a foreign lock cannot say is taken from the tarball, never guessed; what it holds
+that upm cannot install is refused, not dropped.
 
 ## A workspace is a leaf, never a store entry
 

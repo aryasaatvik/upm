@@ -1,0 +1,7 @@
+{
+  "name": "fixture-alias",
+  "version": "1.0.0",
+  "dependencies": {
+    "x": "npm:is-number@^7.0.0"
+  }
+}
