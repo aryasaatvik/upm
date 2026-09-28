@@ -4,9 +4,10 @@ import { mkdir, mkdtemp, open, readFile, readdir, realpath, rm, writeFile } from
 import { createServer } from "node:http";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseArgv } from "../src/cli.ts";
@@ -991,8 +992,20 @@ describe("exec", () => {
 });
 
 describe("startup budget", () => {
-  /** Every `src/*.ts` reachable from `upm.ts`, which is what Node strips types off per run. */
+  type Code = (filename: string, source: string) => { code: string };
+
+  /** The rolldown obuild bundles with: its oxc transform and minifier. */
+  async function oxc(): Promise<{ minifySync: Code; transformSync: Code }> {
+    const obuild = createRequire(import.meta.url).resolve("obuild");
+    return await import(pathToFileURL(createRequire(obuild).resolve("rolldown/utils")).href);
+  }
+
+  /**
+   * Every `src/*.ts` reachable from `upm.ts`, which is what Node strips types off per run, by
+   * its size minified on its own: comments and long names cost nothing, code does.
+   */
   async function reachable(): Promise<Map<string, number>> {
+    const { minifySync, transformSync } = await oxc();
     const out = new Map<string, number>();
     const queue = ["upm.ts", "cli.ts"]; // the bin, and the module it loads once the cache is on
     for (const name of queue) {
@@ -1001,8 +1014,8 @@ describe("startup budget", () => {
         fileURLToPath(new URL(`../src/${name}`, import.meta.url)),
         "utf8",
       );
-      // Counted as committed: a Windows checkout turns every LF into CRLF.
-      out.set(name, text.replaceAll("\r\n", "\n").length);
+      const js = transformSync(name, text).code;
+      out.set(name, minifySync(name.replace(/\.ts$/, ".js"), js).code.length);
       // A module in a subdirectory, or loaded for its side effects only, would go uncounted:
       // `src/store/` did, for as long as it existed.
       expect(text, name).not.toMatch(/from "\.\/[\w-]+\/|^import "\./m);
@@ -1016,30 +1029,11 @@ describe("startup budget", () => {
   it("keeps the startup module graph within its budget", async () => {
     // Without a compile-cache hit, every reachable source module needs type stripping.
     // Re-measure startup before raising this budget. Pools should load only when used.
-    // Recounted when `src/store/` was flattened: the count had missed that directory and taken
-    // type-only imports as loads. 338,181 bytes over 25 modules, one fewer than was loaded
-    // before, since the unpack pool became an `import()`. 382,328 over 27 after the 2026-09-16
-    // merge (`dns.ts` and the install state's inputs are the two additions; the tracer is a lazy
-    // chunk), measured once for the merged branches rather than summed per branch; 385,309
-    // once `dns.ts` grew `fetching()`, the same modules; 386,371 once a pool that starts no
-    // thread says so (`./upm --help` unchanged); 393,569 with min-release-age (`--help` the
-    // same 41 ms as before it, the same modules); 397,079 once install picks which lockfile
-    // to read (another manager's is `foreign-lock.ts`, loaded only then), no-op and help unchanged;
-    // 415,918 with tarball dependencies, the same modules, their commands' part in
-    // `tarball-deps.ts` (`./upm --help` without the compile cache: paired medians within
-    // -1.0 and +1.6 ms of main's 108 ms); 417,320 once `cli.ts` and `upm.ts` swapped names and
-    // four modules took longer ones, the same modules (paired medians -0.0 and +2.6 ms in two
-    // orders, an A/A pair +1.0 ms on the same busy box); 417,747 once a failed link waits for
-    // its other builds, the same modules (paired median +0.1 ms, an A/A pair +0.8 ms); 422,633
-    // with npm's command names and flags, the same modules (paired medians -1.7 and -1.0 ms in
-    // two orders, an A/A pair -0.2 ms); 425,154 once `run` installs first, the same modules
-    // (paired medians -1.0 and -0.5 ms in two orders, an A/A pair +0.3 ms); 436,707 with
-    // `offline` and kept registry documents, the same modules: the disk half is `metadata.ts`,
-    // loaded only to resolve (paired medians -0.6 and -2.0 ms, an A/A pair -0.7).
+    // 138,791 minified bytes over 27 modules when the count moved from source bytes (437,989).
     const modules = await reachable();
     const bytes = [...modules.values()].reduce((total, size) => total + size, 0);
     expect(modules.size).toBeLessThanOrEqual(27); // `upm.ts` is the bin, `cli.ts` the program
-    expect(bytes).toBeLessThanOrEqual(438_000);
+    expect(bytes).toBeLessThanOrEqual(140_000);
     // Found through `import()` by the commands that read a project, like the pools: each holds
     // its worker's whole code in the build.
     const lazy = [
