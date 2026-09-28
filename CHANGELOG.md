@@ -1,6 +1,33 @@
 # Changelog
 
 
+## v1.2.0
+
+[compare changes](https://github.com/unjs/upm/compare/v1.1.0...v1.2.0)
+
+### 🚀 Enhancements
+
+- Fall back to installed bins for `upm <cmd>` ([a9a38b5](https://github.com/unjs/upm/commit/a9a38b5))
+
+### 💅 Refactors
+
+- Reduce dist size ([7b8496f](https://github.com/unjs/upm/commit/7b8496f))
+- **cli:** Improve messages ([47da6e9](https://github.com/unjs/upm/commit/47da6e9))
+
+### 🏡 Chore
+
+- Credit @sondreb for pkg name ([6672999](https://github.com/unjs/upm/commit/6672999))
+- Rerun full benchmarks ([dc5cf3a](https://github.com/unjs/upm/commit/dc5cf3a))
+- Add devEngines.packageManager ([6611add](https://github.com/unjs/upm/commit/6611add))
+
+### ✅ Tests
+
+- Measure startup budget as minified code ([c0c5a33](https://github.com/unjs/upm/commit/c0c5a33))
+
+### ❤️ Contributors
+
+- Pooya Parsa ([@pi0](https://github.com/pi0))
+
 ## v1.1.0
 
 
