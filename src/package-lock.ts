@@ -218,7 +218,10 @@ export function toPackageLock(
   const source = metadata.get(resolution);
   const packages: Record<string, PackageLockEntry> = {};
   const bin = normalizeBin(manifest);
-  const license = typeof manifest.license === "object" ? manifest.license.type : manifest.license;
+  const license =
+    manifest.license && typeof manifest.license === "object"
+      ? manifest.license.type
+      : manifest.license;
   const present = (value: unknown): boolean =>
     !!value && (typeof value !== "object" || Object.keys(value).length > 0);
   packages[""] = {

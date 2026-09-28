@@ -87,6 +87,16 @@ describe("npm v3 package locks", () => {
       funding: { type: "individual", url: "https://example.invalid/new-fund" },
     });
   });
+  it("writes no root license for a null license", async () => {
+    const lock = parsePackageLock(await fixture("root-metadata", "package-lock.json"));
+    const manifest = JSON.parse(await fixture("root-metadata", "package.json"));
+    const { resolution, placement } = fromPackageLock(lock, manifest);
+    manifest.license = null;
+
+    expect(toPackageLock(resolution, placement, manifest).packages[""]).not.toHaveProperty(
+      "license",
+    );
+  });
   it("names both locations when one identity has two peer contexts", () => {
     const dependencies = { plugin: "^1", host: "^1", b: "^1" };
     const lock = parsePackageLock(
