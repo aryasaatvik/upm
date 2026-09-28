@@ -20,7 +20,7 @@
 
 `@aryasaatvik/upm` is a light fork of [unjs/upm](https://github.com/unjs/upm) for Samva hosted installs on Cloudflare Workers and worker bundlers. The fork adds Workers runtime fixes, npm package-lock v3 read/write, npm-compatible hoisting, and an in-memory `./worker` entry. Upstream remains the source of the core package manager.
 
-After the first release, install the fork with `npm i @aryasaatvik/upm`. Its portable entries are `@aryasaatvik/upm/resolver` and `@aryasaatvik/upm/worker`; the command names remain `upm` and `upx`.
+Install the fork with `npm i @aryasaatvik/upm`. Its portable entries are `@aryasaatvik/upm/resolver` and `@aryasaatvik/upm/worker`; the command names remain `upm` and `upx`.
 
 To sync upstream, create `chore/upstream-<yyyy-mm-dd>` from `main`, merge `upstream/main`, resolve fork-specific changes, and review the result before merging back to `main`.
 
