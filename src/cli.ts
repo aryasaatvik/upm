@@ -597,7 +597,8 @@ function installed(
   started: number,
   changes?: Record<string, unknown>,
 ): string {
-  const seconds = ((Date.now() - started) / 1000).toFixed(2);
+  const ms = Date.now() - started;
+  const seconds = (ms / 1000).toFixed(2);
   const { packages, workspaces, otherPlatforms, upToDate, missingOptional, stats } = result;
   if (cli.json) {
     const out = { ...changes, packages, workspaces, otherPlatforms, ...stats };
@@ -606,14 +607,17 @@ function installed(
   for (const id of missingOptional) note(`${id} is missing from the store and was not linked`);
   // Not a problem, but silence about a number this large would make the package count look
   // like it disagrees with the lockfile.
-  const others = otherPlatforms > 0 ? ` (+${otherPlatforms} for other platforms)` : "";
+  const others = otherPlatforms > 0 ? ` (+${otherPlatforms} skipped)` : "";
+  const time = ` in ${ms < 1000 ? `${ms}ms` : `${seconds}s`}`;
   const plural = workspaces > 0 ? `, ${workspaces} workspace${workspaces === 1 ? "" : "s"}` : "";
-  const count = `${packages} packages${plural}${others}`;
-  const time = paint("gray", `${seconds}s`, "stdout");
-  if (upToDate) return `${count}  ${paint("green", "already up to date", "stdout")}  ${time}`;
-  const swept = stats.removed > 0 ? `  ${stats.removed} removed` : "";
-  const fixed = stats.repaired > 0 ? `  ${stats.repaired} repaired` : "";
-  return `${count}  ${stats.entries} entries (${stats.reused} reused)  ${stats.linked} linked, ${stats.copied} copied  ${stats.bins} bins${swept}${fixed}  ${time}`;
+  const count = `${packages} packages${plural}`;
+  const gray = (text: string) => paint("gray", text, "stdout");
+  if (upToDate)
+    return `${count}${gray(others)} ${paint("green", "up to date", "stdout")}${gray(time)}`;
+  let detail = `${others}, ${stats.entries} entries (${stats.reused} reused), ${stats.linked} linked, ${stats.copied} copied, ${stats.bins} bins`;
+  if (stats.removed > 0) detail += `, ${stats.removed} removed`;
+  if (stats.repaired > 0) detail += `, ${stats.repaired} repaired`;
+  return `${paint("green", "Installed", "stdout")} ${count}${gray(detail + time)}`;
 }
 
 function pruned(cli: Cli, { entries, content }: PruneResult): string {
