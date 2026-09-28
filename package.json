@@ -44,5 +44,12 @@
     "oxlint": "latest",
     "typescript": "latest",
     "vitest": "latest"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "upm",
+      "version": "^1",
+      "onFail": "warn"
+    }
   }
 }
