@@ -1,7 +1,7 @@
 import { UpmError } from "./error.ts";
 import { readForeign } from "./foreign-lock-core.ts";
 import { checkPlacement, hoist } from "./hoist.ts";
-import { fromLockfile } from "./lock-core.ts";
+import { fromLockfile } from "./lock.ts";
 import {
   formatPackageLock,
   fromPackageLock,
@@ -50,9 +50,16 @@ export async function lockProject(
     return { text: input.lock, changed: false, warnings: resolution.warnings };
   }
 
+  const fetcher: typeof fetch = (request, init) =>
+    (input.fetch ?? globalThis.fetch)(request, {
+      ...init,
+      signal: input.signal
+        ? AbortSignal.any([input.signal, ...(init?.signal ? [init.signal] : [])])
+        : init?.signal,
+    });
   const registry =
     typeof input.registry === "string"
-      ? createRegistry({ registry: input.registry, fetch: input.fetch, concurrency: 6, start: 6 })
+      ? createRegistry({ registry: input.registry, fetch: fetcher, concurrency: 6, start: 6 })
       : input.registry;
   let previous;
   let previousPlacement;
@@ -80,11 +87,22 @@ export async function lockProject(
   }
   abort();
   try {
-    const resolution = await resolveTree(input.manifest, {
+    const resolving = resolveTree(input.manifest, {
       registry,
       locked: previous,
       concurrency: 6,
     });
+    let onAbort: (() => void) | undefined;
+    const cancelled = new Promise<never>((_, reject) => {
+      onAbort = () => reject(new UpmError("EABORT", "lock operation aborted"));
+      input.signal?.addEventListener("abort", onAbort, { once: true });
+    });
+    let resolution;
+    try {
+      resolution = await Promise.race([resolving, cancelled]);
+    } finally {
+      if (onAbort) input.signal?.removeEventListener("abort", onAbort);
+    }
     abort();
     const placement = hoist(resolution, previousPlacement);
     const text = formatPackageLock(toPackageLock(resolution, placement, input.manifest));

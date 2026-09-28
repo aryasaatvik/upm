@@ -39,8 +39,10 @@
     "release:check": "npm run lint && npm run typecheck && vitest run"
   },
   "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@cloudflare/worker-bundler": "^0.2.4",
     "@types/node": "latest",
-    "@vitest/coverage-v8": "latest",
+    "@vitest/coverage-v8": "^4.1.0",
     "automd": "latest",
     "jup": "latest",
     "obuild": "latest",
@@ -48,7 +50,8 @@
     "oxlint": "latest",
     "tegami": "^1.5.0",
     "typescript": "latest",
-    "vitest": "latest"
+    "vitest": "^4.1.0",
+    "workerd": "1.20260928.1"
   },
   "devEngines": {
     "packageManager": {

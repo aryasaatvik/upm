@@ -3,8 +3,8 @@
 // npm's and bun's path-keyed maps are walked the way Node resolves and pnpm's peer suffixes are
 // stripped. Loaded only when a project has one of these files and no `upm.lock`.
 import { normalizeBin } from "./normalize-bin.ts";
-import { checkLockfile, LOCKFILE } from "./lock-core.ts";
-import type { ForeignFile, LockEntry, Lockfile } from "./lock-core.ts";
+import { checkLockfile, LOCKFILE } from "./lock.ts";
+import type { ForeignFile, LockEntry, Lockfile } from "./lock.ts";
 import { tarballUrl } from "./registry.ts";
 import type { BaseFor } from "./registry.ts";
 import { declaredSpecs, declaredWorkspaces } from "./resolve.ts";

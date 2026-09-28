@@ -1,9 +1,9 @@
 import { UpmError } from "./error.ts";
 import { checkPlacement } from "./hoist.ts";
-import { createVerifier } from "./integrity.ts";
+import { createVerifier, parseIntegrity } from "./integrity.ts";
 import { fromPackageLock, parsePackageLock } from "./package-lock.ts";
 import type { PackageJson } from "./package-lock.ts";
-import { filterPlatform } from "./resolve.ts";
+import { filterPlatformForTarget } from "./resolve.ts";
 import type { Platform } from "./resolve.ts";
 import { extractTar } from "./tar.ts";
 import { noTarballCache } from "./tarball-cache.ts";
@@ -53,7 +53,7 @@ export async function materialize(input: MaterializeInput): Promise<{
   let selected = resolution;
   try {
     if (input.platform && input.platform !== "none")
-      selected = filterPlatform(resolution, input.platform);
+      selected = filterPlatformForTarget(resolution, input.platform);
   } catch (error) {
     throw new UpmError("EPLATFORM", (error as Error).message);
   }
@@ -91,6 +91,14 @@ export async function materialize(input: MaterializeInput): Promise<{
     if (existing) return existing;
     const task = (async () => {
       abort();
+      try {
+        parseIntegrity(integrity);
+      } catch {
+        throw new UpmError("EINTEGRITY", `invalid integrity for ${path}`, {
+          phase: "lock",
+          key: path,
+        });
+      }
       let cached: Uint8Array | undefined;
       try {
         cached = await cache.get(integrity);
@@ -103,11 +111,6 @@ export async function materialize(input: MaterializeInput): Promise<{
         return cached;
       }
       const corruptCache = cached !== undefined;
-      if (!integrity)
-        throw new UpmError("EINTEGRITY", `missing integrity for ${path}`, {
-          phase: "lock",
-          key: path,
-        });
       if (!/^https?:\/\//.test(resolved))
         throw new UpmError("ELOCK", `missing tarball URL for ${path}`);
       let response: Response;

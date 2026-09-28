@@ -56,4 +56,47 @@ describe("lockProject", () => {
       }),
     ).rejects.toMatchObject({ code: "EFOREIGNLOCK" });
   });
+
+  it("aborts an in-flight registry request", async () => {
+    const controller = new AbortController();
+    const pending = lockProject({
+      manifest: { dependencies: { a: "^1.0.0" } },
+      mode: "update",
+      registry: "https://registry.test",
+      signal: controller.signal,
+      fetch: (_request, init) =>
+        new Promise<Response>((_, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), {
+            once: true,
+          });
+        }),
+    });
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ code: "EABORT" });
+  });
+
+  it.each(["bun.lock", "pnpm-lock.yaml"] as const)(
+    "converts %s without registry requests",
+    async (file) => {
+      const manifest = JSON.parse(
+        await readFile(new URL("./fixtures/foreign/package.json", import.meta.url), "utf8"),
+      );
+      const foreign = await readFile(
+        new URL(`./fixtures/foreign/${file}`, import.meta.url),
+        "utf8",
+      );
+      const result = await lockProject({
+        manifest,
+        mode: "update",
+        from: { file, text: foreign },
+        registry: "https://registry.npmjs.org",
+        fetch: () => {
+          throw new Error("conversion must use locked versions");
+        },
+      });
+      expect(parsePackageLock(result.text).packages["node_modules/nitro"]?.version).toBe(
+        "3.0.260903-beta",
+      );
+    },
+  );
 });

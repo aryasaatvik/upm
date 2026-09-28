@@ -100,6 +100,11 @@ describe("materialize", () => {
         }).input,
       ),
     ).rejects.toMatchObject({ code: "EINTEGRITY", detail: { phase: "cache" } });
+    const malformed = JSON.parse(lock);
+    malformed.packages["node_modules/a"].integrity = "invalid";
+    await expect(
+      materialize(setup({ lock: JSON.stringify(malformed) }).input),
+    ).rejects.toMatchObject({ code: "EINTEGRITY", detail: { phase: "lock" } });
   });
 
   it("keeps nested duplicate placements and skips dev or platform-excluded packages", async () => {

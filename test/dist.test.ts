@@ -95,6 +95,7 @@ describe("dist", () => {
     const code = await visit(join(out, "worker", "worker.mjs"));
     expect([...seen].map((file) => file.split("/").at(-1))).not.toContain("main.mjs");
     expect([...seen].map((file) => file.split("/").at(-1))).not.toContain("unpack.mjs");
+    expect(code).not.toMatch(/readFileSync|writeFileSync|mkdirSync|\.fsp\./);
     expect(code).not.toContain("needs at least one spec");
     expect(code).not.toContain("a symlink that leads nowhere");
   });

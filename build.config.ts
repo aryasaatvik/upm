@@ -96,7 +96,7 @@ export default defineBuildConfig({
           group("unpack", "unpack"),
           group("tar", "tar"),
           group("registry", "registry|pick|pluck|semver|spec|dns"),
-          group("resolve", "resolve|lock-core"),
+          group("resolve", "resolve|lock"),
           group(
             "main",
             "api|link|keys|state|store|package-json|config|gc|exec|run|types|workspaces",
