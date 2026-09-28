@@ -26,6 +26,8 @@ export interface PackageLockEntry {
   funding?: string | Record<string, unknown>;
   hasInstallScript?: boolean;
   deprecated?: string;
+  bundleDependencies?: string[];
+  acceptDependencies?: Record<string, string>;
   link?: boolean;
   inBundle?: boolean;
   bundled?: boolean;
@@ -215,12 +217,38 @@ export function toPackageLock(
 ): PackageLock {
   const source = metadata.get(resolution);
   const packages: Record<string, PackageLockEntry> = {};
+  const bin = normalizeBin(manifest);
+  const license = typeof manifest.license === "object" ? manifest.license.type : manifest.license;
+  const present = (value: unknown): boolean =>
+    !!value && (typeof value !== "object" || Object.keys(value).length > 0);
   packages[""] = {
     ...(manifest.name && { name: manifest.name }),
     ...(manifest.version && { version: manifest.version }),
-    ...Object.fromEntries(groups.filter((g) => manifest[g]).map((g) => [g, manifest[g]])),
-    ...(manifest.peerDependencies && { peerDependencies: manifest.peerDependencies }),
-    ...(manifest.peerDependenciesMeta && { peerDependenciesMeta: manifest.peerDependenciesMeta }),
+    ...Object.fromEntries(groups.filter((g) => present(manifest[g])).map((g) => [g, manifest[g]])),
+    ...(present(manifest.peerDependencies) && { peerDependencies: manifest.peerDependencies }),
+    ...(present(manifest.peerDependenciesMeta) && {
+      peerDependenciesMeta: manifest.peerDependenciesMeta,
+    }),
+    ...(present(manifest.bundleDependencies) && {
+      bundleDependencies: manifest.bundleDependencies,
+    }),
+    ...(present(manifest.acceptDependencies) && {
+      acceptDependencies: manifest.acceptDependencies,
+    }),
+    ...(present(manifest.funding) && { funding: manifest.funding }),
+    ...(present(manifest.engines) && { engines: manifest.engines }),
+    ...(present(manifest.os) && { os: manifest.os }),
+    ...(present(manifest.cpu) && { cpu: manifest.cpu }),
+    ...(present(manifest.libc) && { libc: manifest.libc }),
+    ...(manifest.hasInstallScript ||
+    manifest.scripts?.preinstall ||
+    manifest.scripts?.install ||
+    manifest.scripts?.postinstall
+      ? { hasInstallScript: true }
+      : {}),
+    ...(license && { license }),
+    ...(Object.keys(bin).length && { bin }),
+    ...(manifest.deprecated && { deprecated: manifest.deprecated }),
   };
   for (const [path, key] of placement) {
     const pkg = resolution.packages[key];

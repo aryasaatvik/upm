@@ -74,6 +74,17 @@ export interface RootManifest {
   peerDependencies?: Record<string, string>;
   peerDependenciesMeta?: Record<string, { optional?: boolean }>;
   bin?: unknown;
+  engines?: Record<string, string>;
+  os?: string[];
+  cpu?: string[];
+  libc?: string[];
+  license?: Manifest["license"];
+  funding?: Manifest["funding"];
+  hasInstallScript?: boolean;
+  scripts?: Record<string, string>;
+  deprecated?: string;
+  bundleDependencies?: string[];
+  acceptDependencies?: Record<string, string>;
   workspaces?: string[] | { packages?: string[] };
 }
 

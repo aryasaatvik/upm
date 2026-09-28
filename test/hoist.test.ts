@@ -5,7 +5,16 @@ import { checkPlacement, hoist } from "../src/hoist.ts";
 import { fromPackageLock, parsePackageLock } from "../src/package-lock.ts";
 import type { Resolution } from "../src/resolve.ts";
 
-const cases = ["alias", "dev-optional", "nested", "optional", "peer", "react", "starter"];
+const cases = [
+  "alias",
+  "dev-optional",
+  "nested",
+  "optional",
+  "peer",
+  "react",
+  "root-metadata",
+  "starter",
+];
 const fixture = (name: string, file: string) =>
   readFile(
     fileURLToPath(new URL(`./fixtures/package-lock/${name}/${file}`, import.meta.url)),

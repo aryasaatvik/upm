@@ -1,0 +1,19 @@
+{
+  "name": "fixture-root-metadata",
+  "version": "1.0.0",
+  "license": {
+    "type": "MIT",
+    "url": "https://example.invalid/license"
+  },
+  "funding": {
+    "type": "individual",
+    "url": "https://example.invalid/fund"
+  },
+  "bin": "./bin/cli.js",
+  "scripts": {
+    "install": "node install.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

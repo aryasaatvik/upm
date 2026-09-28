@@ -8,7 +8,16 @@ import {
   toPackageLock,
 } from "../src/package-lock.ts";
 
-const cases = ["alias", "dev-optional", "nested", "optional", "peer", "react", "starter"];
+const cases = [
+  "alias",
+  "dev-optional",
+  "nested",
+  "optional",
+  "peer",
+  "react",
+  "root-metadata",
+  "starter",
+];
 const fixture = (name: string, file: string) =>
   readFile(
     fileURLToPath(new URL(`./fixtures/package-lock/${name}/${file}`, import.meta.url)),
@@ -58,6 +67,25 @@ describe("npm v3 package locks", () => {
       integrity: "sha512-updated",
     });
     expect(written.packages["node_modules/is-number"]?.resolved).toContain("is-number-6.0.0");
+  });
+  it("derives root metadata from the current manifest", async () => {
+    const lock = parsePackageLock(await fixture("root-metadata", "package-lock.json"));
+    const manifest = JSON.parse(await fixture("root-metadata", "package.json"));
+    const { resolution, placement } = fromPackageLock(lock, manifest);
+    manifest.license = { type: "ISC", url: "https://example.invalid/new-license" };
+    manifest.bin = "./bin/next.js";
+    manifest.engines.node = ">=22";
+    manifest.funding.url = "https://example.invalid/new-fund";
+    delete manifest.scripts;
+
+    expect(toPackageLock(resolution, placement, manifest).packages[""]).toEqual({
+      name: "fixture-root-metadata",
+      version: "1.0.0",
+      license: "ISC",
+      bin: { "fixture-root-metadata": "bin/next.js" },
+      engines: { node: ">=22" },
+      funding: { type: "individual", url: "https://example.invalid/new-fund" },
+    });
   });
   it("names both locations when one identity has two peer contexts", () => {
     const dependencies = { plugin: "^1", host: "^1", b: "^1" };

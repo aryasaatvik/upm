@@ -15,7 +15,16 @@ import {
 } from "../src/package-lock.ts";
 
 const run = promisify(execFile);
-const cases = ["alias", "dev-optional", "nested", "optional", "peer", "react", "starter"];
+const cases = [
+  "alias",
+  "dev-optional",
+  "nested",
+  "optional",
+  "peer",
+  "react",
+  "root-metadata",
+  "starter",
+];
 for (const name of cases) {
   const path = fileURLToPath(
     new URL(`../test/fixtures/package-lock/${name}/package.json`, import.meta.url),
