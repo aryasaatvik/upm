@@ -31,8 +31,10 @@ use `src/runtime.ts`, with Node as the fast path. Keep `Buffer` there. Where the
 is shared, use the global directly. On the resolver side, read `globalThis.process?.`
 with a fallback. Filesystem installation may assume Node.
 
-The package has two entries: `upm` (`src/index.ts`, the commands in `src/api.ts`) needs Node;
-`upm/resolver` (`src/resolver.ts`) must stay portable and never import the commands. Public
+The package has three entries: `upm` (`src/index.ts`, the commands in `src/api.ts`) needs Node;
+`upm/resolver` (`src/resolver.ts`) must stay portable and never import the commands;
+`@aryasaatvik/upm/worker` (`src/worker.ts`) locks and materializes in memory for Workers and
+must not import installer or eager filesystem modules, as `test/dist.test.ts` checks. Public
 functions never print: output belongs to `src/cli.ts`, messages to the caller's `log`.
 A worker ships inside its pool's chunk (`src/workers.ts`, filled by `build.config.ts`), never
 as a file of its own, so an app that bundles upm still starts its threads.
