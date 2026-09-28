@@ -20,13 +20,13 @@ function reachableKeys(resolution: Resolution): Set<string> {
     const key = pending.pop()!;
     if (seen.has(key)) continue;
     const pkg = resolution.packages[key];
-    if (!pkg) throw new UpmError("EPLACE", `missing ${key}`);
+    if (!pkg) continue;
     seen.add(key);
     for (const [name, version] of Object.entries({
       ...pkg.dependencies,
       ...pkg.optionalDependencies,
     }))
-      pending.push(keyFor(name, version));
+      if (resolution.packages[keyFor(name, version)]) pending.push(keyFor(name, version));
   }
   return seen;
 }
@@ -67,6 +67,8 @@ export function checkPlacement(resolution: Resolution, placement: Placement): vo
   const needed = reachableKeys(resolution);
   const edge = (from: string, name: string, version: string, peer = false) => {
     const expected = keyFor(name, version);
+    if (!resolution.packages[expected])
+      throw new UpmError("EPLACE", `missing ${name} required by ${from || "root"}`);
     const found = lookup(placement, peer ? parentOf(from) : from, name);
     if (found !== expected)
       throw new UpmError(
@@ -91,8 +93,10 @@ export function checkPlacement(resolution: Resolution, placement: Placement): vo
     for (const [name, version] of Object.entries({
       ...pkg.dependencies,
       ...pkg.optionalDependencies,
-    }))
+    })) {
+      if (!resolution.packages[keyFor(name, version)] && pkg.peers?.[name] === "optional") continue;
       edge(path, name, version, name in (pkg.peers ?? {}));
+    }
     for (const [name, range] of Object.entries(pkg.peerDependencies ?? {})) {
       if (
         (name in pkg.dependencies || name in (pkg.optionalDependencies ?? {})) &&
@@ -136,7 +140,7 @@ export function hoist(resolution: Resolution, previous?: Placement): Placement {
   const direct = Object.entries(resolution.root.dependencies);
   for (const [name, version] of direct) {
     const key = keyFor(name, version);
-    if (!resolution.packages[key]) throw new UpmError("EPLACE", `missing ${key}`);
+    if (!resolution.packages[key]) throw new UpmError("EPLACE", `missing ${name} required by root`);
     const path = `node_modules/${name}`;
     placed.set(path, key);
     roots.push(path);
@@ -185,8 +189,10 @@ export function hoist(resolution: Resolution, previous?: Placement): Placement {
       ...pkg.optionalDependencies,
     })) {
       const key = keyFor(name, version);
-      if (!resolution.packages[key])
-        throw new UpmError("EPLACE", `missing ${key} required by ${from}`);
+      if (!resolution.packages[key]) {
+        if (pkg.peers?.[name] === "optional") continue;
+        throw new UpmError("EPLACE", `missing ${name} required by ${from}`);
+      }
       const peer = name in (pkg.peers ?? {});
       const context = peer ? parentOf(from) : from;
       const already = lookup(placed, context, name);

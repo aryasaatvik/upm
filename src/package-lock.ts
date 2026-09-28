@@ -18,10 +18,10 @@ export interface PackageLockEntry {
   peerDependencies?: Record<string, string>;
   peerDependenciesMeta?: Record<string, { optional?: boolean }>;
   bin?: string | Record<string, string>;
-  engines?: Record<string, string>;
-  os?: string[];
-  cpu?: string[];
-  libc?: string[];
+  engines?: Record<string, string> | string[];
+  os?: string[] | string;
+  cpu?: string[] | string;
+  libc?: string[] | string;
   license?: string | { type: string };
   funding?: string | Record<string, unknown>;
   hasInstallScript?: boolean;
@@ -45,6 +45,8 @@ export type PackageJson = RootManifest;
 
 const groups = ["dependencies", "devDependencies", "optionalDependencies"] as const;
 const metadata = new WeakMap<Resolution, Map<string, PackageLockEntry>>();
+const platformList = (value: string[] | string): string[] =>
+  typeof value === "string" ? [value] : value;
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 const pathName = (path: string): string => path.slice(path.lastIndexOf("node_modules/") + 13);
@@ -58,6 +60,37 @@ export function lookup(placement: Placement, from: string, name: string): string
     const at = dir.lastIndexOf("/node_modules/");
     dir = at < 0 ? "" : dir.slice(0, at);
   }
+}
+
+/** Only registry tarballs can be installed from the portable npm lock API. */
+export function supportedResolved(key: string, resolved: string, registries: string[]): string {
+  const kind = /^(?:git(?:\+[^:]+)?:|github:)/i.test(resolved)
+    ? "git"
+    : /^file:/i.test(resolved)
+      ? "file"
+      : "tarball";
+  const refusal = (message: string): never => {
+    throw new UpmError("ELOCK", `${message} for ${key}`, { key, resolved, kind });
+  };
+  if (kind === "git") refusal("git dependencies are not supported");
+  if (kind === "file") refusal("local file dependencies are not supported");
+  let url: URL;
+  try {
+    url = new URL(resolved);
+  } catch {
+    return refusal("invalid tarball URL");
+  }
+  const allowed = registries.some((base) => {
+    const registry = new URL(base);
+    const prefix = registry.pathname.endsWith("/") ? registry.pathname : `${registry.pathname}/`;
+    return (
+      (url.protocol === "https:" || (url.protocol === "http:" && registry.protocol === "http:")) &&
+      url.origin === registry.origin &&
+      url.pathname.startsWith(prefix)
+    );
+  });
+  if (!allowed) refusal("tarball outside allowed registries");
+  return url.href;
 }
 
 export function parsePackageLock(text: string): PackageLock {
@@ -135,7 +168,12 @@ export function fromPackageLock(
     })) {
       const target = lookup(placement, from, name);
       if (!target) {
-        if (name in (entry.optionalDependencies ?? {}) || peers[name] === "optional") continue;
+        if (name in (entry.optionalDependencies ?? {}))
+          throw new UpmError(
+            "ELOCK",
+            `missing optional dependency ${name} from ${from || "root"}; npm ci would reject the lock`,
+          );
+        if (peers[name] === "optional") continue;
         throw new UpmError("ELOCK", `missing ${name} from ${from || "root"}`);
       }
       const version = target.slice(name.length + 1);
@@ -162,9 +200,9 @@ export function fromPackageLock(
       optional: !!entry.optional,
       dev: !!entry.dev,
       bin: normalizeBin({ name: entry.name ?? pathName(path), bin: entry.bin }),
-      ...(entry.os && { os: entry.os }),
-      ...(entry.cpu && { cpu: entry.cpu }),
-      ...(entry.libc && { libc: entry.libc }),
+      ...(entry.os && { os: platformList(entry.os) }),
+      ...(entry.cpu && { cpu: platformList(entry.cpu) }),
+      ...(entry.libc && { libc: platformList(entry.libc) }),
       ...(entry.peerDependencies && { peerDependencies: entry.peerDependencies }),
       ...(Object.keys(edges.peers).length && { peers: edges.peers }),
     };

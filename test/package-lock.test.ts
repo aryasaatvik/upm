@@ -56,6 +56,45 @@ describe("npm v3 package locks", () => {
       }
       expect(formatPackageLock(written)).toBe(text);
     });
+  it("normalizes scalar platform fields without changing npm lock bytes", () => {
+    const manifest = { optionalDependencies: { native: "1.0.0" } };
+    const text = formatPackageLock({
+      lockfileVersion: 3,
+      requires: true,
+      packages: {
+        "": manifest,
+        "node_modules/native": {
+          version: "1.0.0",
+          optional: true,
+          os: "linux",
+          cpu: "x64",
+          libc: "glibc",
+        },
+      },
+    });
+    const { resolution, placement } = fromPackageLock(parsePackageLock(text), manifest);
+    expect(resolution.packages["native@1.0.0"]).toMatchObject({
+      os: ["linux"],
+      cpu: ["x64"],
+      libc: ["glibc"],
+    });
+    expect(formatPackageLock(toPackageLock(resolution, placement, manifest))).toBe(text);
+  });
+
+  it("carries a legacy engines array byte for byte", () => {
+    const manifest = { dependencies: { old: "1.0.0" } };
+    const text = formatPackageLock({
+      lockfileVersion: 3,
+      requires: true,
+      packages: {
+        "": manifest,
+        "node_modules/old": { version: "1.0.0", engines: ["node >= 0.8.0"] },
+      },
+    });
+    const { resolution, placement } = fromPackageLock(parsePackageLock(text), manifest);
+    expect(formatPackageLock(toPackageLock(resolution, placement, manifest))).toBe(text);
+  });
+
   it("marks root peers and optional peers from their edge types", () => {
     const manifest = {
       peerDependencies: { host: "1.0.0", addon: "1.0.0" },
@@ -78,6 +117,76 @@ describe("npm v3 package locks", () => {
     expect(written["node_modules/addon"]?.peer).toBe(true);
     expect(written["node_modules/addon"]?.optional).toBe(true);
   });
+  it("omits an absent optional peer and preserves its lock record", () => {
+    const manifest = { dependencies: { a: "1.0.0" } };
+    const text = formatPackageLock({
+      lockfileVersion: 3,
+      requires: true,
+      packages: {
+        "": manifest,
+        "node_modules/a": {
+          version: "1.0.0",
+          peerDependencies: { missing: "^1" },
+          peerDependenciesMeta: { missing: { optional: true } },
+        },
+      },
+    });
+    const { resolution, placement } = fromPackageLock(parsePackageLock(text), manifest);
+    expect(resolution.packages["a@1.0.0"]?.optionalDependencies).toBeUndefined();
+    expect(formatPackageLock(toPackageLock(resolution, placement, manifest))).toBe(text);
+  });
+
+  it.each(["root", "node_modules/a"])(
+    "rejects an absent optional dependency declared by %s as npm ci does",
+    (from) => {
+      const manifest =
+        from === "root"
+          ? { optionalDependencies: { missing: "1.0.0" } }
+          : { dependencies: { a: "1.0.0" } };
+      const lock = parsePackageLock(
+        JSON.stringify({
+          lockfileVersion: 3,
+          packages: {
+            "": manifest,
+            ...(from !== "root" && {
+              "node_modules/a": {
+                version: "1.0.0",
+                optionalDependencies: { missing: "1.0.0" },
+              },
+            }),
+          },
+        }),
+      );
+      expect(() => fromPackageLock(lock, manifest)).toThrowError(
+        expect.objectContaining({
+          code: "ELOCK",
+          message: expect.stringContaining(
+            `missing optional dependency missing from ${from}; npm ci would reject the lock`,
+          ),
+        }),
+      );
+    },
+  );
+
+  it("rejects a missing required lock edge with its declaring path", () => {
+    const manifest = { dependencies: { a: "1.0.0" } };
+    const lock = parsePackageLock(
+      JSON.stringify({
+        lockfileVersion: 3,
+        packages: {
+          "": manifest,
+          "node_modules/a": { version: "1.0.0", dependencies: { missing: "^1" } },
+        },
+      }),
+    );
+    expect(() => fromPackageLock(lock, manifest)).toThrowError(
+      expect.objectContaining({
+        code: "ELOCK",
+        message: expect.stringContaining("missing from node_modules/a"),
+      }),
+    );
+  });
+
   it("rejects old and malformed locks", () => {
     for (const text of ["{", "{}", '{"lockfileVersion":2,"packages":{}}'])
       expect(() => parsePackageLock(text)).toThrowError(expect.objectContaining({ code: "ELOCK" }));

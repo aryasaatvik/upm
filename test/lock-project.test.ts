@@ -37,12 +37,103 @@ describe("lockProject", () => {
       manifest,
       lock,
       mode: "update",
-      registry: "https://registry.test",
+      registry: "https://registry.npmjs.org",
       fetch: () => {
         throw new Error("unchanged update must use locked versions");
       },
     });
     expect(result).toEqual({ text: lock, changed: false, warnings: [] });
+  });
+
+  it("validates a scoped alias against its real package registry", async () => {
+    const manifest = { dependencies: { alias: "npm:@scope/pkg@1.0.0" } };
+    const lock = JSON.stringify({
+      lockfileVersion: 3,
+      packages: {
+        "": manifest,
+        "node_modules/alias": {
+          name: "@scope/pkg",
+          version: "1.0.0",
+          resolved: "https://scope.test/@scope/pkg/-/pkg-1.0.0.tgz",
+          integrity: "sha512-locked",
+        },
+      },
+    });
+    const registry = createRegistry({
+      registry: "https://registry.test",
+      scopes: { "@scope": "https://scope.test" },
+      fetch: () => {
+        throw new Error("locked alias must not fetch");
+      },
+    });
+    const result = await lockProject({ manifest, lock, mode: "update", registry });
+    expect(parsePackageLock(result.text).packages["node_modules/alias"]?.resolved).toBe(
+      "https://scope.test/@scope/pkg/-/pkg-1.0.0.tgz",
+    );
+  });
+
+  it.each([
+    ["git+ssh://git@github.com/example/a.git", "git", "git dependencies are not supported"],
+    ["git+https://github.com/example/a.git", "git", "git dependencies are not supported"],
+    ["github:example/a", "git", "git dependencies are not supported"],
+    ["file:../a.tgz", "file", "local file dependencies are not supported"],
+    ["https://other.test/a.tgz", "tarball", "tarball outside allowed registries"],
+  ])("refuses %s in an update before fetching", async (resolved, kind, message) => {
+    const manifest = JSON.parse(await fixture("nested", "package.json"));
+    const graph = JSON.parse(await fixture("nested", "package-lock.json"));
+    const key = "node_modules/ansi-regex";
+    graph.packages[key].resolved = resolved;
+    let fetched = false;
+    await expect(
+      lockProject({
+        manifest,
+        lock: JSON.stringify(graph),
+        mode: "update",
+        registry: "https://registry.npmjs.org",
+        fetch: async () => {
+          fetched = true;
+          throw new Error("unexpected fetch");
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "ELOCK",
+      message: expect.stringContaining(message),
+      detail: { key, resolved, kind },
+    });
+    expect(fetched).toBe(false);
+  });
+
+  it("refuses a public npm tarball when only a custom registry is configured", async () => {
+    const manifest = JSON.parse(await fixture("nested", "package.json"));
+    const lock = await fixture("nested", "package-lock.json");
+    const key = "node_modules/ansi-regex";
+    const resolved = parsePackageLock(lock).packages[key]!.resolved;
+    let fetched = false;
+    await expect(
+      lockProject({
+        manifest,
+        lock,
+        mode: "update",
+        registry: "https://registry.test",
+        fetch: async () => {
+          fetched = true;
+          throw new Error("unexpected fetch");
+        },
+      }),
+    ).rejects.toMatchObject({ code: "ELOCK", detail: { key, resolved, kind: "tarball" } });
+    expect(fetched).toBe(false);
+    await expect(
+      materialize({
+        manifest,
+        lock,
+        registry: "https://registry.test",
+        fetch: async () => {
+          fetched = true;
+          throw new Error("unexpected fetch");
+        },
+      }),
+    ).rejects.toMatchObject({ code: "ELOCK", detail: { key, resolved, kind: "tarball" } });
+    expect(fetched).toBe(false);
   });
 
   it("updates one direct package while keeping unrelated versions and placements", async () => {
@@ -53,7 +144,7 @@ describe("lockProject", () => {
       manifest,
       lock,
       mode: "update",
-      registry: "https://registry.test",
+      registry: "https://registry.npmjs.org",
       fetch: () => {
         throw new Error("locked versions should suffice");
       },

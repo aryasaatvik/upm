@@ -1,6 +1,13 @@
 import { gzipSync, gunzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { materialize } from "../src/materialize.ts";
+import { checkPlacement, hoist } from "../src/hoist.ts";
+import {
+  formatPackageLock,
+  fromPackageLock,
+  parsePackageLock,
+  toPackageLock,
+} from "../src/package-lock.ts";
 import type { MaterializeInput } from "../src/materialize.ts";
 import type { TarballCache } from "../src/tarball-cache.ts";
 import { hashOf } from "./hash.ts";
@@ -42,6 +49,45 @@ function setup(overrides: Partial<MaterializeInput> = {}) {
 }
 
 describe("materialize", () => {
+  it("reads, hoists, writes and materializes root and nested scoped names", async () => {
+    const scopedManifest = { dependencies: { "@scope/a": "1.0.0", b: "1.0.0" } };
+    const scopedLock = formatPackageLock({
+      lockfileVersion: 3,
+      requires: true,
+      packages: {
+        "": scopedManifest,
+        "node_modules/@scope/a": {
+          version: "1.0.0",
+          resolved: "https://registry.test/a1.tgz",
+          integrity,
+        },
+        "node_modules/b": {
+          version: "1.0.0",
+          resolved: "https://registry.test/b.tgz",
+          integrity,
+          dependencies: { "@scope/a": "2.0.0" },
+        },
+        "node_modules/b/node_modules/@scope/a": {
+          version: "2.0.0",
+          resolved: "https://registry.test/a2.tgz",
+          integrity,
+        },
+      },
+    });
+    const { resolution, placement } = fromPackageLock(parsePackageLock(scopedLock), scopedManifest);
+    expect(placement.get("node_modules/@scope/a")).toBe("@scope/a@1.0.0");
+    expect(placement.get("node_modules/b/node_modules/@scope/a")).toBe("@scope/a@2.0.0");
+    expect(hoist(structuredClone(resolution))).toEqual(placement);
+    checkPlacement(resolution, placement);
+    expect(formatPackageLock(toPackageLock(resolution, placement, scopedManifest))).toBe(
+      scopedLock,
+    );
+    const { input } = setup({ manifest: scopedManifest, lock: scopedLock });
+    const result = await materialize(input);
+    expect(result.files["node_modules/@scope/a/index.js"]).toBeDefined();
+    expect(result.files["node_modules/b/node_modules/@scope/a/index.js"]).toBeDefined();
+  });
+
   it("fetches, verifies and filters files at the locked placement", async () => {
     const { calls, input } = setup({ include: (path) => path.endsWith(".js") });
     const result = await materialize(input);
@@ -64,6 +110,24 @@ describe("materialize", () => {
       });
       expect(calls).toEqual([]);
     }
+  });
+
+  it.each([
+    ["git+ssh://git@github.com/example/a.git", "git", "git dependencies are not supported"],
+    ["git+https://github.com/example/a.git", "git", "git dependencies are not supported"],
+    ["github:example/a", "git", "git dependencies are not supported"],
+    ["file:../a.tgz", "file", "local file dependencies are not supported"],
+    ["https://other.test/a.tgz", "tarball", "tarball outside allowed registries"],
+  ])("refuses %s before any fetch", async (resolved, kind, message) => {
+    const graph = JSON.parse(lock);
+    graph.packages["node_modules/a"].resolved = resolved;
+    const { calls, input } = setup({ lock: JSON.stringify(graph) });
+    await expect(materialize(input)).rejects.toMatchObject({
+      code: "ELOCK",
+      message: expect.stringContaining(message),
+      detail: { key: "node_modules/a", resolved, kind },
+    });
+    expect(calls).toEqual([]);
   });
 
   it("requires the configured registry path prefix", async () => {
@@ -197,6 +261,28 @@ describe("materialize", () => {
     await expect(
       materialize(setup({ lock: JSON.stringify(malformed) }).input),
     ).rejects.toMatchObject({ code: "EINTEGRITY", detail: { phase: "lock" } });
+  });
+
+  it("filters scalar platform fields for another platform and none", async () => {
+    const graph = JSON.parse(lock);
+    graph.packages[""].optionalDependencies = { native: "1.0.0" };
+    graph.packages["node_modules/native"] = {
+      version: "1.0.0",
+      optional: true,
+      resolved: "https://registry.test/native.tgz",
+      integrity,
+      os: "linux",
+      cpu: "x64",
+      libc: "glibc",
+    };
+    const text = JSON.stringify(graph);
+    for (const platform of [{ os: "darwin", cpu: "arm64" }, "none" as const]) {
+      const { input, calls } = setup({ lock: text, manifest: graph.packages[""], platform });
+      const result = await materialize(input);
+      expect(result.packages).toBe(1);
+      expect(result.files["node_modules/native/index.js"]).toBeUndefined();
+      expect(calls).toEqual(["https://registry.test/a.tgz"]);
+    }
   });
 
   it("keeps nested duplicate placements and skips dev or platform-excluded packages", async () => {

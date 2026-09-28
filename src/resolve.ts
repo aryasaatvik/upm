@@ -269,7 +269,9 @@ export async function resolveTree(
     const key = `${m.name}@${m.version}`;
     let hit = libcs.get(key);
     if (!hit) {
-      hit = registry.manifest(m.name, m.version).then((full) => full.libc);
+      hit = registry
+        .manifest(m.name, m.version)
+        .then((full) => (typeof full.libc === "string" ? [full.libc] : full.libc));
       hit.catch(() => {});
       libcs.set(key, hit);
     }
@@ -1048,9 +1050,9 @@ function record(name: string, m: Manifest, source?: string): ResolvedPackage {
     optional: true,
     dev: true,
     bin: normalizeBin(m), // an alias renames the package, never its bins
-    ...(m.os ? { os: m.os } : {}),
-    ...(m.cpu ? { cpu: m.cpu } : {}),
-    ...(m.libc ? { libc: m.libc } : {}),
+    ...(m.os ? { os: typeof m.os === "string" ? [m.os] : m.os } : {}),
+    ...(m.cpu ? { cpu: typeof m.cpu === "string" ? [m.cpu] : m.cpu } : {}),
+    ...(m.libc ? { libc: typeof m.libc === "string" ? [m.libc] : m.libc } : {}),
     ...(m.peerDependencies ? { peerDependencies: sorted(m.peerDependencies) } : {}),
   };
 }

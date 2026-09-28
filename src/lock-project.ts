@@ -7,6 +7,7 @@ import {
   formatPackageLock,
   fromPackageLock,
   parsePackageLock,
+  supportedResolved,
   toPackageLock,
 } from "./package-lock.ts";
 import type { PackageJson, PackageLockEntry } from "./package-lock.ts";
@@ -62,6 +63,13 @@ export async function lockProject(
     typeof input.registry === "string"
       ? createRegistry({ registry: input.registry, fetch: fetcher, concurrency: 6, start: 6 })
       : input.registry;
+  const validateSources = (packages: Record<string, PackageLockEntry>) => {
+    for (const [path, entry] of Object.entries(packages)) {
+      if (!path || !entry.resolved) continue;
+      const name = entry.name ?? path.slice(path.lastIndexOf("node_modules/") + 13);
+      supportedResolved(path, entry.resolved, [registry.baseFor(name)]);
+    }
+  };
   let previous;
   let previousPlacement;
   let warnings: string[] = [];
@@ -82,6 +90,7 @@ export async function lockProject(
     }
   } else if (input.lock !== undefined) {
     const lock = parsePackageLock(input.lock);
+    validateSources(lock.packages);
     const old = fromPackageLock(lock, rootManifest(lock.packages[""]!));
     previous = old.resolution;
     previousPlacement = old.placement;
@@ -107,7 +116,9 @@ export async function lockProject(
     abort();
     const placement = hoist(resolution, previousPlacement);
     if (previous && previousPlacement) carryPackageLockEntries(previous, resolution);
-    const text = formatPackageLock(toPackageLock(resolution, placement, input.manifest));
+    const next = toPackageLock(resolution, placement, input.manifest);
+    validateSources(next.packages);
+    const text = formatPackageLock(next);
     return { text, changed: text !== input.lock, warnings: [...warnings, ...resolution.warnings] };
   } catch (error) {
     if (input.signal?.aborted) throw new UpmError("EABORT", "lock operation aborted");
