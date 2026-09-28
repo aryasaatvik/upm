@@ -66,7 +66,7 @@ export async function lockProject(
   const validateSources = (packages: Record<string, PackageLockEntry>) => {
     for (const [path, entry] of Object.entries(packages)) {
       if (!path || !entry.resolved) continue;
-      const name = path.slice(path.lastIndexOf("node_modules/") + 13);
+      const name = entry.name ?? path.slice(path.lastIndexOf("node_modules/") + 13);
       supportedResolved(path, entry.resolved, [
         registry.baseFor(name),
         "https://registry.npmjs.org",

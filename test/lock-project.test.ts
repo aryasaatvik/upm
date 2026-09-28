@@ -45,6 +45,33 @@ describe("lockProject", () => {
     expect(result).toEqual({ text: lock, changed: false, warnings: [] });
   });
 
+  it("validates a scoped alias against its real package registry", async () => {
+    const manifest = { dependencies: { alias: "npm:@scope/pkg@1.0.0" } };
+    const lock = JSON.stringify({
+      lockfileVersion: 3,
+      packages: {
+        "": manifest,
+        "node_modules/alias": {
+          name: "@scope/pkg",
+          version: "1.0.0",
+          resolved: "https://scope.test/@scope/pkg/-/pkg-1.0.0.tgz",
+          integrity: "sha512-locked",
+        },
+      },
+    });
+    const registry = createRegistry({
+      registry: "https://registry.test",
+      scopes: { "@scope": "https://scope.test" },
+      fetch: () => {
+        throw new Error("locked alias must not fetch");
+      },
+    });
+    const result = await lockProject({ manifest, lock, mode: "update", registry });
+    expect(parsePackageLock(result.text).packages["node_modules/alias"]?.resolved).toBe(
+      "https://scope.test/@scope/pkg/-/pkg-1.0.0.tgz",
+    );
+  });
+
   it.each([
     ["git+ssh://git@github.com/example/a.git", "git", "git dependencies are not supported"],
     ["git+https://github.com/example/a.git", "git", "git dependencies are not supported"],
