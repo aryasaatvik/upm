@@ -1,6 +1,13 @@
 import { gzipSync, gunzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { materialize } from "../src/materialize.ts";
+import { checkPlacement, hoist } from "../src/hoist.ts";
+import {
+  formatPackageLock,
+  fromPackageLock,
+  parsePackageLock,
+  toPackageLock,
+} from "../src/package-lock.ts";
 import type { MaterializeInput } from "../src/materialize.ts";
 import type { TarballCache } from "../src/tarball-cache.ts";
 import { hashOf } from "./hash.ts";
@@ -42,6 +49,45 @@ function setup(overrides: Partial<MaterializeInput> = {}) {
 }
 
 describe("materialize", () => {
+  it("reads, hoists, writes and materializes root and nested scoped names", async () => {
+    const scopedManifest = { dependencies: { "@scope/a": "1.0.0", b: "1.0.0" } };
+    const scopedLock = formatPackageLock({
+      lockfileVersion: 3,
+      requires: true,
+      packages: {
+        "": scopedManifest,
+        "node_modules/@scope/a": {
+          version: "1.0.0",
+          resolved: "https://registry.test/a1.tgz",
+          integrity,
+        },
+        "node_modules/b": {
+          version: "1.0.0",
+          resolved: "https://registry.test/b.tgz",
+          integrity,
+          dependencies: { "@scope/a": "2.0.0" },
+        },
+        "node_modules/b/node_modules/@scope/a": {
+          version: "2.0.0",
+          resolved: "https://registry.test/a2.tgz",
+          integrity,
+        },
+      },
+    });
+    const { resolution, placement } = fromPackageLock(parsePackageLock(scopedLock), scopedManifest);
+    expect(placement.get("node_modules/@scope/a")).toBe("@scope/a@1.0.0");
+    expect(placement.get("node_modules/b/node_modules/@scope/a")).toBe("@scope/a@2.0.0");
+    expect(hoist(structuredClone(resolution))).toEqual(placement);
+    checkPlacement(resolution, placement);
+    expect(formatPackageLock(toPackageLock(resolution, placement, scopedManifest))).toBe(
+      scopedLock,
+    );
+    const { input } = setup({ manifest: scopedManifest, lock: scopedLock });
+    const result = await materialize(input);
+    expect(result.files["node_modules/@scope/a/index.js"]).toBeDefined();
+    expect(result.files["node_modules/b/node_modules/@scope/a/index.js"]).toBeDefined();
+  });
+
   it("fetches, verifies and filters files at the locked placement", async () => {
     const { calls, input } = setup({ include: (path) => path.endsWith(".js") });
     const result = await materialize(input);
