@@ -5,7 +5,7 @@ import { asOf, pickManifest, viewOf as parsedView } from "./pick.ts";
 import type { PackumentView, PickOptions } from "./pick.ts";
 import { pluckModified, pluckTags, pluckTimes, pluckVersion } from "./pluck.ts";
 import { concat, sleep } from "./runtime.ts";
-import { parseDep } from "./spec.ts";
+import { escapeName } from "./spec.ts";
 import type { Spec } from "./spec.ts";
 import type { Manifest, Packument } from "./types.ts";
 
@@ -317,8 +317,7 @@ export function createRegistry(options: RegistryOptions = {}): Registry {
     });
   }
 
-  // parseDep validates the name and gives the escaped registry path form.
-  const path = (name: string) => `${baseFor(name)}/${parseDep(name, "").escapedName}`;
+  const path = (name: string) => `${baseFor(name)}/${escapeName(name)}`;
 
   function headers(url: string, accept: string, etag?: string): Record<string, string> {
     const authorization = authFor(auth, url);

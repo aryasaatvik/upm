@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseArgv } from "../src/cli.ts";
+import type { Cli } from "../src/cli.ts";
 import { hashOf } from "./hash.ts";
 import { makeTarball } from "./tarball.ts";
 
@@ -234,6 +235,37 @@ describe("npm's spellings", () => {
       help: false,
     });
     expect(parseArgv(["ci", "--no-save"]).error).toBe('unknown flag "--no-save"');
+  });
+
+  it("turns one field on for each switch, spelled exactly", () => {
+    const switches: Record<string, keyof Cli> = {
+      "-y": "yes",
+      "--yes": "yes",
+      "--workspaces": "workspaces",
+      "--include-workspace-root": "includeRoot",
+      "--if-present": "ifPresent",
+      "-h": "help",
+      "--json": "json",
+      "--production": "production",
+      "--lock": "lock",
+      "--offline": "offline",
+      "--prefer-offline": "preferOffline",
+      "--frozen-lockfile": "frozen",
+      "--verify": "verify",
+      "--dev": "dev",
+      "-D": "dev",
+      "-O": "optional",
+      "--optional": "optional",
+      "--exact": "exact",
+      "-E": "exact",
+    };
+    for (const [flag, field] of Object.entries(switches)) {
+      const cli = parseArgv(["add", "x", flag]);
+      expect(cli[field]).toBe(true);
+      expect(cli.specs).toEqual(["x"]);
+      expect(parseArgv(["add", "x", `${flag}=true`]).error).toBe(`unknown flag "${flag}=true"`);
+    }
+    expect(parseArgv(["add", "toString"]).specs).toEqual(["toString"]);
   });
 
   it("reads -s, -q and a low --loglevel as quiet", () => {

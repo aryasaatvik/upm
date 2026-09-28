@@ -5,7 +5,6 @@ import { builtin } from "./builtin.ts";
 import { readConfig } from "./config.ts";
 import type { Config } from "./config.ts";
 import { pruneStore, sweepEntries } from "./gc.ts";
-import { fromShasum } from "./integrity.ts";
 import { shortHash } from "./keys.ts";
 import { linkTree, treeStanding } from "./link.ts";
 import type { LinkPool } from "./link.ts";
@@ -21,7 +20,7 @@ import {
   writeLockfile,
 } from "./lock.ts";
 import type { ForeignFile, Lockfile } from "./lock.ts";
-import { addDeps, checkManifest, formatManifest, removeDeps, saveRange } from "./package-json.ts";
+import { addDeps, formatManifest, parseManifest, removeDeps, saveRange } from "./package-json.ts";
 import type { Added, Group } from "./package-json.ts";
 import { pickManifest } from "./pick.ts";
 import { createRegistry, hosts } from "./registry.ts";
@@ -30,6 +29,7 @@ import {
   currentPlatform,
   filterPlatform,
   GROUPS,
+  integrityOf,
   keyOf,
   resolveTree,
   runsOn,
@@ -1514,14 +1514,7 @@ async function loadManifest(
       cause: error,
     });
   }
-  let manifest: unknown;
-  try {
-    manifest = JSON.parse(raw);
-  } catch (error) {
-    throw fail(`${file} is not valid JSON: ${(error as Error).message}`, "EMANIFEST");
-  }
-  checkManifest(manifest, file);
-  return { file, raw, manifest };
+  return { file, raw, manifest: parseManifest(raw, file) };
 }
 
 async function saveManifest({ file, raw, manifest }: Edit): Promise<void> {
@@ -1728,14 +1721,6 @@ function tarballReader(
 function tarballOf(dir: string, resolved: string, source?: string): Tarball {
   if (!source?.startsWith("file:")) return resolved;
   return { path: builtin.path.resolve(dir, source.slice("file:".length)) };
-}
-
-/** Packages published before 2017 carry only a legacy sha1 `shasum`. */
-function integrityOf(manifest: Manifest): string {
-  const { integrity, shasum } = manifest.dist;
-  if (integrity) return integrity;
-  if (shasum) return fromShasum(shasum);
-  throw fail(`${manifest.name}@${manifest.version} has no dist integrity or shasum`, "EINTEGRITY");
 }
 
 function fail(message: string, code: ErrorCode): Error {

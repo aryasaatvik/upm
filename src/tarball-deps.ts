@@ -4,7 +4,7 @@
 import { builtin } from "./builtin.ts";
 import { LOCKFILE } from "./lock.ts";
 import type { Lockfile } from "./lock.ts";
-import { checkManifest } from "./package-json.ts";
+import { parseManifest } from "./package-json.ts";
 import { GROUPS } from "./resolve.ts";
 import type { ResolveOptions } from "./resolve.ts";
 import { parse } from "./semver.ts";
@@ -41,16 +41,9 @@ export async function readTarball(
   const file = read.index.files.find((entry) => entry.path === "package.json");
   if (!file) throw fail(`${source} has no package.json`, "EMANIFEST");
   const text = await builtin.fsp.readFile(store.blobPath(file), "utf8");
-  let manifest: unknown;
-  try {
-    manifest = JSON.parse(text);
-  } catch (error) {
-    throw fail(`${where} is not valid JSON: ${(error as Error).message}`, "EMANIFEST");
-  }
   // Written by hand, not checked by a registry: a peer range has to be a string to be read,
   // and npm takes a bare string for a platform list.
-  checkManifest(manifest, where, [...GROUPS, "peerDependencies"]);
-  const m = manifest as Manifest;
+  const m = parseManifest(text, where, [...GROUPS, "peerDependencies"]) as Manifest;
   for (const field of ["os", "cpu", "libc"] as const) {
     const list: unknown = m[field];
     if (typeof list === "string") m[field] = [list];

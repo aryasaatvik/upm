@@ -1013,7 +1013,7 @@ function record(name: string, m: Manifest, source?: string): ResolvedPackage {
 }
 
 /** Packages published before 2017 carry only a legacy sha1 `shasum`. */
-function integrityOf(m: Manifest): string {
+export function integrityOf(m: Manifest): string {
   const { integrity, shasum } = m.dist;
   if (integrity) return integrity;
   if (shasum) return fromShasum(shasum);
@@ -1130,7 +1130,7 @@ function context(error: unknown, name: string, range: string, from: string): Err
   });
 }
 
-function sorted(record: Record<string, string>): Record<string, string> {
+export function sorted(record: Record<string, string>): Record<string, string> {
   return Object.fromEntries(Object.entries(record).sort(([a], [b]) => (a < b ? -1 : 1)));
 }
 

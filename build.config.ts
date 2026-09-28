@@ -20,7 +20,13 @@ async function bundleWorker(input: string): Promise<string> {
   const { rolldown } = await loadRolldown();
   const build = await rolldown({ input, platform: "node", logLevel: "warn" });
   try {
-    const { output } = await build.generate({ format: "esm", codeSplitting: false, minify: true });
+    // No `/* @__PURE__ */` notes: nothing tree-shakes a worker's string after this.
+    const { output } = await build.generate({
+      format: "esm",
+      codeSplitting: false,
+      minify: true,
+      comments: false,
+    });
     return output[0].code;
   } finally {
     await build.close();
@@ -64,6 +70,8 @@ export default defineBuildConfig({
       config.plugins = [workers, config.plugins];
     },
     rolldownOutput(config) {
+      // obuild turns this off. Short names for what chunks import from each other.
+      config.minifyInternalExports = true;
       // A few chunks, not one per shared module: every file on the way to `main()` is a
       // resolve, a read and a compile, and fifteen of them were 3 ms of a 30 ms `--help`.
       // `upm/resolver` stays clear of the commands in `main`. The workers share no chunk:

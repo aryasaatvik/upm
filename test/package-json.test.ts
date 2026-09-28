@@ -3,6 +3,7 @@ import {
   addDeps,
   checkManifest,
   formatManifest,
+  parseManifest,
   removeDeps,
   saveRange,
 } from "../src/package-json.ts";
@@ -111,5 +112,30 @@ describe("checkManifest", () => {
     expect(() => checkManifest([], "p")).toThrow("not a JSON object");
     expect(() => checkManifest({ dependencies: "oops" }, "p")).toThrow("dependencies is not a map");
     expect(() => checkManifest({ devDependencies: { a: 1 } }, "p")).toThrow("not a map");
+  });
+});
+
+describe("parseManifest", () => {
+  it("parses and checks, naming the file in every refusal", () => {
+    expect(parseManifest('{"dependencies":{"a":"^1"}}', "p")).toEqual({
+      dependencies: { a: "^1" },
+    });
+    let message = "";
+    try {
+      JSON.parse("{");
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(() => parseManifest("{", "p")).toThrow(
+      expect.objectContaining({ message: `p is not valid JSON: ${message}`, code: "EMANIFEST" }),
+    );
+    expect(() => parseManifest("[]", "p")).toThrow(
+      expect.objectContaining({ message: "p is not a JSON object", code: "EMANIFEST" }),
+    );
+    const peers = '{"peerDependencies":{"a":1}}';
+    expect(parseManifest(peers, "p")).toEqual({ peerDependencies: { a: 1 } });
+    expect(() => parseManifest(peers, "p", ["peerDependencies"])).toThrow(
+      "p: peerDependencies is not a map of ranges",
+    );
   });
 });

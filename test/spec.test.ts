@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bareTarball, parseDep, parseSpec, tarballSource } from "../src/spec.ts";
+import { bareTarball, escapeName, parseDep, parseSpec, tarballSource } from "../src/spec.ts";
 
 describe("parseSpec", () => {
   it("bare name becomes the * range", () => {
@@ -115,6 +115,33 @@ describe("parseSpec", () => {
 
   it("rejects a url-unsafe tag", () => {
     expect(() => parseSpec("foo@a/../../etc")).toThrow(/Invalid tag/);
+  });
+});
+
+describe("escapeName", () => {
+  it("escapes a name as parseDep does", () => {
+    for (const name of ["foo", "@scope/foo", "Foo.Bar", "@s/.x"]) {
+      expect(escapeName(name)).toBe(parseDep(name, "").escapedName);
+    }
+    expect(escapeName("@scope/foo")).toBe("@scope%2ffoo");
+  });
+
+  it("refuses a bad name with parseDep's error", () => {
+    for (const name of ["", ".foo", "a/b", "@s", "node_modules", "@s/%"]) {
+      let expected: Error | undefined;
+      try {
+        parseDep(name, "");
+      } catch (error) {
+        expected = error as Error;
+      }
+      expect(expected).toBeDefined();
+      expect(() => escapeName(name)).toThrow(
+        expect.objectContaining({ message: expected!.message, code: "EINVALIDSPEC" }),
+      );
+    }
+    expect(() => escapeName("a/b")).toThrow(
+      'Invalid package name "a/b" of package "a/b": name is malformed',
+    );
   });
 });
 

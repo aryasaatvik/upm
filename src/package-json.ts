@@ -1,6 +1,6 @@
 // What `add` and `remove` do to package.json: pure over the parsed object, and written back
 // the way the file already was.
-import { GROUPS } from "./resolve.ts";
+import { GROUPS, sorted } from "./resolve.ts";
 import type { RootManifest } from "./resolve.ts";
 import type { Spec } from "./spec.ts";
 
@@ -43,6 +43,22 @@ export function checkManifest(
   }
 }
 
+/** A package.json's text, parsed and checked by `checkManifest`. */
+export function parseManifest(
+  raw: string,
+  file: string,
+  groups?: readonly (Group | "peerDependencies")[],
+): RootManifest {
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(raw);
+  } catch (error) {
+    throw fail(`${file} is not valid JSON: ${(error as Error).message}`);
+  }
+  checkManifest(manifest, file, groups);
+  return manifest;
+}
+
 /** Put each dep in its group, out of any other group it was in. Groups stay sorted. */
 export function addDeps(manifest: RootManifest, added: Added[]): void {
   for (const { name, range, group } of added) {
@@ -81,8 +97,4 @@ function drop(manifest: RootManifest, group: Group, name: string): boolean {
 
 function fail(message: string): Error {
   return Object.assign(new Error(message), { code: "EMANIFEST" });
-}
-
-function sorted(map: Record<string, string>): Record<string, string> {
-  return Object.fromEntries(Object.entries(map).sort(([a], [b]) => (a < b ? -1 : 1)));
 }

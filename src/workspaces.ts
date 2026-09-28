@@ -2,7 +2,7 @@
 // in package.json `workspaces` and found the way npm's map-workspaces does, so a monorepo
 // that npm, yarn or bun reads is read the same here. Node-only, like link.ts.
 import { builtin } from "./builtin.ts";
-import { checkManifest } from "./package-json.ts";
+import { parseManifest } from "./package-json.ts";
 import type { RootManifest } from "./resolve.ts";
 
 export interface Workspace {
@@ -167,14 +167,7 @@ async function readManifest(file: string): Promise<RootManifest> {
       cause: error,
     });
   }
-  let manifest: unknown;
-  try {
-    manifest = JSON.parse(raw);
-  } catch (error) {
-    throw fail(`${file} is not valid JSON: ${(error as Error).message}`, "EMANIFEST");
-  }
-  checkManifest(manifest, file);
-  return manifest;
+  return parseManifest(raw, file);
 }
 
 function fail(message: string, code = "EWORKSPACE"): Error {

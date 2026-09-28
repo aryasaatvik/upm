@@ -53,6 +53,12 @@ export function parseSpec(arg: string, where?: string): Spec {
   return build(name, spec, arg, where);
 }
 
+/** A registry package name, checked as `parseDep` checks it, in `escapedName`'s form. */
+export function escapeName(name: string): string {
+  checkName(name, name);
+  return name.replace("/", "%2f");
+}
+
 /** Parse an already split `package.json` dependencies entry. */
 export function parseDep(name: string, spec: string, where?: string): Spec {
   return build(name, spec, spec ? `${name}@${spec}` : name, where);

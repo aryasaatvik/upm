@@ -246,6 +246,36 @@ const NPM_NOOPS = new Set([
   "-P",
   "--save-prod",
 ]);
+/** Flags that turn one field on. */
+const SWITCHES = {
+  "-s": "quiet",
+  "--silent": "quiet",
+  "-q": "quiet",
+  "--quiet": "quiet",
+  "-y": "yes",
+  "--yes": "yes",
+  "--workspaces": "workspaces",
+  "--include-workspace-root": "includeRoot",
+  "--if-present": "ifPresent",
+  "-h": "help",
+  "--help": "help",
+  "--json": "json",
+  "--production": "production",
+  "--lock": "lock",
+  "--offline": "offline",
+  "--prefer-offline": "preferOffline",
+  "--frozen-lockfile": "frozen",
+  "--verify": "verify",
+  "--dev": "dev",
+  "-D": "dev",
+  "--save-dev": "dev",
+  "--optional": "optional",
+  "-O": "optional",
+  "--save-optional": "optional",
+  "--exact": "exact",
+  "-E": "exact",
+  "--save-exact": "exact",
+} as const;
 /** npm's log levels. The first three leave only warnings and errors. */
 const LOG_LEVELS = ["silent", "error", "warn", "notice", "http", "info", "verbose", "silly"];
 
@@ -280,33 +310,35 @@ export function parseArgv(argv: string[]): Cli {
     }
     const eq = arg.indexOf("=");
     const flag = eq === -1 ? arg : arg.slice(0, eq);
+    // A value flag's value: after its `=`, or the next argument.
+    const next = () => (eq === -1 ? argv[++i] : arg.slice(eq + 1));
     // `hasOwn`, or a package named `constructor` reads as a flag that takes a value.
     const key = Object.hasOwn(VALUE_FLAGS, flag)
       ? VALUE_FLAGS[flag as keyof typeof VALUE_FLAGS]
       : undefined;
     if (key) {
-      const value = eq === -1 ? argv[++i] : arg.slice(eq + 1);
+      const value = next();
       if (value === undefined) return { ...cli, error: `${flag} needs a value` };
       cli[key] = value;
     } else if (flag === "-w" || flag === "--workspace") {
-      const value = eq === -1 ? argv[++i] : arg.slice(eq + 1);
+      const value = next();
       if (value === undefined) return { ...cli, error: `${flag} needs a value` };
       (cli.workspace ??= []).push(value);
     } else if (flag === "-c" || flag === "--call") {
-      const value = eq === -1 ? argv[++i] : arg.slice(eq + 1);
+      const value = next();
       if (value === undefined) return { ...cli, error: `${flag} needs a value` };
       cli.call = value;
     } else if (flag === "--before") {
-      const value = eq === -1 ? argv[++i] : arg.slice(eq + 1);
+      const value = next();
       if (!value || Number.isNaN(Date.parse(value)))
         return { ...cli, error: `${flag} takes a date` };
       cli.before = value;
     } else if (flag === "--min-release-age-exclude") {
-      const value = eq === -1 ? argv[++i] : arg.slice(eq + 1);
+      const value = next();
       if (value === undefined) return { ...cli, error: `${flag} needs a value` };
       (cli.minReleaseAgeExclude ??= []).push(value);
     } else if (flag === "--omit" || flag === "--include") {
-      const value = eq === -1 ? argv[++i] : arg.slice(eq + 1);
+      const value = next();
       if (flag === "--include" && ["dev", "prod", "optional", "peer"].includes(value!)) {
         // npm: an include beats an omit, whatever the order.
         if (value === "dev") includeDev = true;
@@ -317,53 +349,23 @@ export function parseArgv(argv: string[]): Cli {
         return { ...cli, error: `${flag} takes ${takes}` };
       }
     } else if (flag === "--loglevel") {
-      const value = eq === -1 ? argv[++i] : arg.slice(eq + 1);
+      const value = next();
       const level = LOG_LEVELS.indexOf(value!);
       if (level === -1) return { ...cli, error: `${flag} takes ${LOG_LEVELS.join(", ")}` };
       if (level < 3) cli.quiet = true;
-    } else if (arg === "-s" || arg === "--silent" || arg === "-q" || arg === "--quiet") {
-      cli.quiet = true;
     } else if (NPM_NOOPS.has(arg)) {
       // Accepted so npm's command lines run unchanged.
     } else if (flag === "--min-release-age") {
-      const value = eq === -1 ? argv[++i] : arg.slice(eq + 1);
+      const value = next();
       const days = value?.trim() ? Number(value) : Number.NaN;
       if (!(days >= 0)) return { ...cli, error: `${flag} takes a number of days` };
       cli.minReleaseAge = days;
     } else if (flag === "-p" || flag === "--package") {
-      const value = eq === -1 ? argv[++i] : arg.slice(eq + 1);
+      const value = next();
       if (value === undefined) return { ...cli, error: `${flag} needs a value` };
       (cli.packages ??= []).push(value);
-    } else if (arg === "-y" || arg === "--yes") {
-      cli.yes = true;
-    } else if (arg === "--workspaces") {
-      cli.workspaces = true;
-    } else if (arg === "--include-workspace-root") {
-      cli.includeRoot = true;
-    } else if (arg === "--if-present") {
-      cli.ifPresent = true;
-    } else if (arg === "-h" || arg === "--help") {
-      cli.help = true;
-    } else if (arg === "--json") {
-      cli.json = true;
-    } else if (arg === "--production") {
-      cli.production = true;
-    } else if (arg === "--lock") {
-      cli.lock = true;
-    } else if (arg === "--offline") {
-      cli.offline = true;
-    } else if (arg === "--prefer-offline") {
-      cli.preferOffline = true;
-    } else if (arg === "--frozen-lockfile") {
-      cli.frozen = true;
-    } else if (arg === "--verify") {
-      cli.verify = true;
-    } else if (arg === "--dev" || arg === "-D" || arg === "--save-dev") {
-      cli.dev = true;
-    } else if (arg === "--optional" || arg === "-O" || arg === "--save-optional") {
-      cli.optional = true;
-    } else if (arg === "--exact" || arg === "-E" || arg === "--save-exact") {
-      cli.exact = true;
+    } else if (Object.hasOwn(SWITCHES, arg)) {
+      cli[SWITCHES[arg as keyof typeof SWITCHES]] = true;
     } else if (flag === "--experimental-link-pool") {
       const pool = parseLinkPool(eq === -1 ? "" : arg.slice(eq + 1));
       if (!pool) return { ...cli, error: `${flag} takes ${POOL_FORM}` };
