@@ -20,6 +20,8 @@
 
 `@aryasaatvik/upm` is a light fork of [unjs/upm](https://github.com/unjs/upm) for Samva hosted installs on Cloudflare Workers and worker bundlers. The fork adds Workers runtime fixes; npm package-lock v3 read/write, npm-compatible hoisting, and an in-memory `./worker` entry are planned. Upstream remains the source of the core package manager.
 
+After the first release, install the fork with `npm i @aryasaatvik/upm`. Its resolver entry is `@aryasaatvik/upm/resolver`; the command names remain `upm` and `upx`.
+
 To sync upstream, create `chore/upstream-<yyyy-mm-dd>` from `main`, merge `upstream/main`, resolve fork-specific changes, and review the result before merging back to `main`.
 
 ## 🤔 Why another package manager?
@@ -42,7 +44,7 @@ making the most of what Node.js already provides? And answer turned out to be po
 
 ## Get started
 
-Install upm globally. The scripts check for Node.js 22.3+, then install upm with npm.
+These upstream instructions install `upm` from `unjs/upm`. The scripts check for Node.js 22.3+, then install it with npm.
 
 ```sh
 # macOS / Linux
