@@ -120,7 +120,7 @@ describe("lockProject", () => {
           throw new Error("unexpected fetch");
         },
       }),
-    ).rejects.toMatchObject({ code: "ELOCK", detail: { key, resolved, kind: "registry" } });
+    ).rejects.toMatchObject({ code: "ELOCK", detail: { key, resolved, kind: "tarball" } });
     expect(fetched).toBe(false);
     await expect(
       materialize({
@@ -132,7 +132,7 @@ describe("lockProject", () => {
           throw new Error("unexpected fetch");
         },
       }),
-    ).rejects.toMatchObject({ code: "ELOCK", detail: { key, resolved, kind: "registry" } });
+    ).rejects.toMatchObject({ code: "ELOCK", detail: { key, resolved, kind: "tarball" } });
     expect(fetched).toBe(false);
   });
 
