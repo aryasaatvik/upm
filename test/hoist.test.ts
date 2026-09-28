@@ -167,7 +167,7 @@ describe("npm placement", () => {
     checkPlacement(resolution, placement);
   });
 
-  it("skips absent optional edges and rejects absent required edges", () => {
+  it("rejects absent optional and required dependency edges in a resolution", () => {
     const resolution: Resolution = {
       root: { dependencies: { a: "1.0.0" } },
       warnings: [],
@@ -185,9 +185,14 @@ describe("npm placement", () => {
         },
       },
     };
-    const placement = hoist(resolution);
-    expect(placement).toEqual(new Map([["node_modules/a", "a@1.0.0"]]));
-    expect(() => checkPlacement(resolution, placement)).not.toThrow();
+    const placement = new Map([["node_modules/a", "a@1.0.0"]]);
+    for (const place of [() => hoist(resolution), () => checkPlacement(resolution, placement)])
+      expect(place).toThrowError(
+        expect.objectContaining({
+          code: "EPLACE",
+          message: expect.stringContaining("missing required by node_modules/a"),
+        }),
+      );
     resolution.packages["a@1.0.0"]!.dependencies.missing = "1.0.0";
     delete resolution.packages["a@1.0.0"]!.optionalDependencies;
     for (const place of [() => hoist(resolution), () => checkPlacement(resolution, placement)])
@@ -197,6 +202,41 @@ describe("npm placement", () => {
           message: expect.stringContaining("missing required by node_modules/a"),
         }),
       );
+    resolution.root = {
+      dependencies: { missing: "1.0.0" },
+      specs: { optionalDependencies: { missing: "^1" } },
+    };
+    for (const place of [() => hoist(resolution), () => checkPlacement(resolution, new Map())])
+      expect(place).toThrowError(
+        expect.objectContaining({
+          code: "EPLACE",
+          message: expect.stringContaining("missing required by root"),
+        }),
+      );
+  });
+
+  it("allows an absent optional peer in a resolution", () => {
+    const resolution: Resolution = {
+      root: { dependencies: { a: "1.0.0" } },
+      warnings: [],
+      packages: {
+        "a@1.0.0": {
+          name: "a",
+          version: "1.0.0",
+          resolved: "",
+          integrity: "",
+          dependencies: {},
+          peerDependencies: { missing: "^1" },
+          peers: { missing: "optional" },
+          optional: false,
+          dev: false,
+          bin: {},
+        },
+      },
+    };
+    const placement = new Map([["node_modules/a", "a@1.0.0"]]);
+    expect(hoist(resolution)).toEqual(placement);
+    expect(() => checkPlacement(resolution, placement)).not.toThrow();
   });
 
   it("reports an unrepresentable peer", () => {

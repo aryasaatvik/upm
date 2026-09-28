@@ -82,14 +82,8 @@ export function checkPlacement(resolution: Resolution, placement: Placement): vo
         },
       );
   };
-  for (const [name, version] of Object.entries(resolution.root.dependencies)) {
-    if (
-      !resolution.packages[keyFor(name, version)] &&
-      name in (resolution.root.specs?.optionalDependencies ?? {})
-    )
-      continue;
+  for (const [name, version] of Object.entries(resolution.root.dependencies))
     edge("", name, version);
-  }
   for (const [path, key] of placement) {
     if (!needed.has(key)) throw new UpmError("EPLACE", `${path} is unreachable`);
     const pkg = resolution.packages[key];
@@ -100,8 +94,7 @@ export function checkPlacement(resolution: Resolution, placement: Placement): vo
       ...pkg.dependencies,
       ...pkg.optionalDependencies,
     })) {
-      if (!resolution.packages[keyFor(name, version)] && name in (pkg.optionalDependencies ?? {}))
-        continue;
+      if (!resolution.packages[keyFor(name, version)] && pkg.peers?.[name] === "optional") continue;
       edge(path, name, version, name in (pkg.peers ?? {}));
     }
     for (const [name, range] of Object.entries(pkg.peerDependencies ?? {})) {
@@ -147,10 +140,7 @@ export function hoist(resolution: Resolution, previous?: Placement): Placement {
   const direct = Object.entries(resolution.root.dependencies);
   for (const [name, version] of direct) {
     const key = keyFor(name, version);
-    if (!resolution.packages[key]) {
-      if (name in (resolution.root.specs?.optionalDependencies ?? {})) continue;
-      throw new UpmError("EPLACE", `missing ${name} required by root`);
-    }
+    if (!resolution.packages[key]) throw new UpmError("EPLACE", `missing ${name} required by root`);
     const path = `node_modules/${name}`;
     placed.set(path, key);
     roots.push(path);
@@ -200,7 +190,7 @@ export function hoist(resolution: Resolution, previous?: Placement): Placement {
     })) {
       const key = keyFor(name, version);
       if (!resolution.packages[key]) {
-        if (name in (pkg.optionalDependencies ?? {})) continue;
+        if (pkg.peers?.[name] === "optional") continue;
         throw new UpmError("EPLACE", `missing ${name} required by ${from}`);
       }
       const peer = name in (pkg.peers ?? {});

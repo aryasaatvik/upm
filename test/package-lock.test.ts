@@ -117,27 +117,56 @@ describe("npm v3 package locks", () => {
     expect(written["node_modules/addon"]?.peer).toBe(true);
     expect(written["node_modules/addon"]?.optional).toBe(true);
   });
-  it("omits absent optional edges but preserves their lock records", () => {
-    for (const optional of ["optionalDependencies", "peerDependencies"] as const) {
-      const manifest = { dependencies: { a: "1.0.0" } };
-      const entry =
-        optional === "optionalDependencies"
-          ? { version: "1.0.0", optionalDependencies: { missing: "1.0.0" } }
-          : {
-              version: "1.0.0",
-              peerDependencies: { missing: "^1" },
-              peerDependenciesMeta: { missing: { optional: true } },
-            };
-      const text = formatPackageLock({
-        lockfileVersion: 3,
-        requires: true,
-        packages: { "": manifest, "node_modules/a": entry },
-      });
-      const { resolution, placement } = fromPackageLock(parsePackageLock(text), manifest);
-      expect(resolution.packages["a@1.0.0"]?.optionalDependencies).toBeUndefined();
-      expect(formatPackageLock(toPackageLock(resolution, placement, manifest))).toBe(text);
-    }
+  it("omits an absent optional peer and preserves its lock record", () => {
+    const manifest = { dependencies: { a: "1.0.0" } };
+    const text = formatPackageLock({
+      lockfileVersion: 3,
+      requires: true,
+      packages: {
+        "": manifest,
+        "node_modules/a": {
+          version: "1.0.0",
+          peerDependencies: { missing: "^1" },
+          peerDependenciesMeta: { missing: { optional: true } },
+        },
+      },
+    });
+    const { resolution, placement } = fromPackageLock(parsePackageLock(text), manifest);
+    expect(resolution.packages["a@1.0.0"]?.optionalDependencies).toBeUndefined();
+    expect(formatPackageLock(toPackageLock(resolution, placement, manifest))).toBe(text);
   });
+
+  it.each(["root", "node_modules/a"])(
+    "rejects an absent optional dependency declared by %s as npm ci does",
+    (from) => {
+      const manifest =
+        from === "root"
+          ? { optionalDependencies: { missing: "1.0.0" } }
+          : { dependencies: { a: "1.0.0" } };
+      const lock = parsePackageLock(
+        JSON.stringify({
+          lockfileVersion: 3,
+          packages: {
+            "": manifest,
+            ...(from !== "root" && {
+              "node_modules/a": {
+                version: "1.0.0",
+                optionalDependencies: { missing: "1.0.0" },
+              },
+            }),
+          },
+        }),
+      );
+      expect(() => fromPackageLock(lock, manifest)).toThrowError(
+        expect.objectContaining({
+          code: "ELOCK",
+          message: expect.stringContaining(
+            `missing optional dependency missing from ${from}; npm ci would reject the lock`,
+          ),
+        }),
+      );
+    },
+  );
 
   it("rejects a missing required lock edge with its declaring path", () => {
     const manifest = { dependencies: { a: "1.0.0" } };

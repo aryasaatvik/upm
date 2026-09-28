@@ -168,7 +168,12 @@ export function fromPackageLock(
     })) {
       const target = lookup(placement, from, name);
       if (!target) {
-        if (name in (entry.optionalDependencies ?? {}) || peers[name] === "optional") continue;
+        if (name in (entry.optionalDependencies ?? {}))
+          throw new UpmError(
+            "ELOCK",
+            `missing optional dependency ${name} from ${from || "root"}; npm ci would reject the lock`,
+          );
+        if (peers[name] === "optional") continue;
         throw new UpmError("ELOCK", `missing ${name} from ${from || "root"}`);
       }
       const version = target.slice(name.length + 1);
