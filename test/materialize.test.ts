@@ -199,6 +199,28 @@ describe("materialize", () => {
     ).rejects.toMatchObject({ code: "EINTEGRITY", detail: { phase: "lock" } });
   });
 
+  it("filters scalar platform fields for another platform and none", async () => {
+    const graph = JSON.parse(lock);
+    graph.packages[""].optionalDependencies = { native: "1.0.0" };
+    graph.packages["node_modules/native"] = {
+      version: "1.0.0",
+      optional: true,
+      resolved: "https://registry.test/native.tgz",
+      integrity,
+      os: "linux",
+      cpu: "x64",
+      libc: "glibc",
+    };
+    const text = JSON.stringify(graph);
+    for (const platform of [{ os: "darwin", cpu: "arm64" }, "none" as const]) {
+      const { input, calls } = setup({ lock: text, manifest: graph.packages[""], platform });
+      const result = await materialize(input);
+      expect(result.packages).toBe(1);
+      expect(result.files["node_modules/native/index.js"]).toBeUndefined();
+      expect(calls).toEqual(["https://registry.test/a.tgz"]);
+    }
+  });
+
   it("keeps nested duplicate placements and skips dev or platform-excluded packages", async () => {
     const graph = JSON.parse(lock);
     graph.packages["node_modules/a"].optionalDependencies = { b: "1.0.0" };

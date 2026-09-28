@@ -19,9 +19,9 @@ export interface PackageLockEntry {
   peerDependenciesMeta?: Record<string, { optional?: boolean }>;
   bin?: string | Record<string, string>;
   engines?: Record<string, string>;
-  os?: string[];
-  cpu?: string[];
-  libc?: string[];
+  os?: string[] | string;
+  cpu?: string[] | string;
+  libc?: string[] | string;
   license?: string | { type: string };
   funding?: string | Record<string, unknown>;
   hasInstallScript?: boolean;
@@ -45,6 +45,8 @@ export type PackageJson = RootManifest;
 
 const groups = ["dependencies", "devDependencies", "optionalDependencies"] as const;
 const metadata = new WeakMap<Resolution, Map<string, PackageLockEntry>>();
+const platformList = (value: string[] | string): string[] =>
+  typeof value === "string" ? [value] : value;
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 const pathName = (path: string): string => path.slice(path.lastIndexOf("node_modules/") + 13);
@@ -162,9 +164,9 @@ export function fromPackageLock(
       optional: !!entry.optional,
       dev: !!entry.dev,
       bin: normalizeBin({ name: entry.name ?? pathName(path), bin: entry.bin }),
-      ...(entry.os && { os: entry.os }),
-      ...(entry.cpu && { cpu: entry.cpu }),
-      ...(entry.libc && { libc: entry.libc }),
+      ...(entry.os && { os: platformList(entry.os) }),
+      ...(entry.cpu && { cpu: platformList(entry.cpu) }),
+      ...(entry.libc && { libc: platformList(entry.libc) }),
       ...(entry.peerDependencies && { peerDependencies: entry.peerDependencies }),
       ...(Object.keys(edges.peers).length && { peers: edges.peers }),
     };

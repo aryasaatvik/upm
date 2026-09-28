@@ -56,6 +56,31 @@ describe("npm v3 package locks", () => {
       }
       expect(formatPackageLock(written)).toBe(text);
     });
+  it("normalizes scalar platform fields without changing npm lock bytes", () => {
+    const manifest = { optionalDependencies: { native: "1.0.0" } };
+    const text = formatPackageLock({
+      lockfileVersion: 3,
+      requires: true,
+      packages: {
+        "": manifest,
+        "node_modules/native": {
+          version: "1.0.0",
+          optional: true,
+          os: "linux",
+          cpu: "x64",
+          libc: "glibc",
+        },
+      },
+    });
+    const { resolution, placement } = fromPackageLock(parsePackageLock(text), manifest);
+    expect(resolution.packages["native@1.0.0"]).toMatchObject({
+      os: ["linux"],
+      cpu: ["x64"],
+      libc: ["glibc"],
+    });
+    expect(formatPackageLock(toPackageLock(resolution, placement, manifest))).toBe(text);
+  });
+
   it("marks root peers and optional peers from their edge types", () => {
     const manifest = {
       peerDependencies: { host: "1.0.0", addon: "1.0.0" },
