@@ -1,3 +1,17 @@
+## @aryasaatvik/upm@0.1.0
+
+### Start the upm fork for Cloudflare Workers
+
+Publish the scoped fork with Cloudflare Workers runtime fixes for gzip decompression and missing install state files.
+
+### Support npm v3 package locks
+
+Read and write npm v3 lockfiles with placement preservation and check generated locks with npm ci.
+
+### Add the Workers entry
+
+Add the Workers-safe `./worker` entry for npm package locks and in-memory materialization.
+
 ## Upstream base
 
 This fork starts from upstream upm 1.2.0. Earlier entries are the upstream release history.
@@ -64,4 +78,3 @@ This fork starts from upstream upm 1.2.0. Earlier entries are the upstream relea
 
 - Pooya Parsa ([@pi0](https://github.com/pi0))
 - Pi0x <x@pi0.io>
-
