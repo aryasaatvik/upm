@@ -14,7 +14,9 @@ import { Code, formatBytes, preview } from "./code.tsx";
 import { LOCK, treePath } from "./files.tsx";
 import { bindInstall, installCard } from "./install.ts";
 import type { InstalledFile } from "../lib/install.ts";
-import { Markdown, MarkdownSkeleton } from "./markdown.tsx";
+import { toBase64 } from "upm/src/runtime.ts";
+import { Markdown, MarkdownSkeleton, type Link } from "./markdown.tsx";
+import { sourceUrl } from "./package.tsx";
 import { ErrorBox, IconButton, Icon, Waiting } from "./ui.tsx";
 
 /** Where the open file's breadcrumb goes (floating over the top of the editor), and what a click
@@ -22,7 +24,9 @@ import { ErrorBox, IconButton, Icon, Waiting } from "./ui.tsx";
 export const Breadcrumb = createContext<{
   slot: HTMLElement | null;
   reveal: (path: string) => void;
-}>({ slot: null, reveal: () => {} });
+  /** Opens a file of the tree, as a README's link to it does. */
+  open: (path: string) => void;
+}>({ slot: null, reveal: () => {}, open: () => {} });
 
 export function Editor(props: {
   view: View | undefined;
@@ -48,17 +52,20 @@ export function Editor(props: {
   }
   if (selected === LOCK) return <Lockfile resolved={view.resolved} picked={picked} />;
   const file = files?.get(selected);
-  if (file) {
-    // The real name and version: an alias installs under another name.
-    const pkg = view.manifest && !(view.manifest instanceof Error) ? view.manifest : view.top;
+  if (files && file) {
+    const manifest = view.manifest instanceof Error ? undefined : view.manifest;
+    const root = treePath(view.name);
+    const own = selected.startsWith(root);
     // The package's own README opens with how to install upm, and it.
-    const readme = /^readme\.(md|markdown)$/i.test(selected.slice(treePath(view.name).length));
+    const readme = own && /^readme\.(md|markdown)$/i.test(selected.slice(root.length));
     return (
       <FileView
         path={selected}
         file={file}
-        pkg={`${pkg.name}@${pkg.version}`}
+        files={files}
         install={readme ? view.name : undefined}
+        repo={own ? sourceUrl(manifest) : undefined}
+        root={root}
       />
     );
   }
@@ -74,19 +81,46 @@ export function Editor(props: {
   return <Waiting>Select a file</Waiting>;
 }
 
+/** A base that resolves a README's relative urls to tree paths. */
+const TREE = "https://tree.invalid/";
+
+/** An image of the tree as a `data:` url: no object url to revoke. */
+function dataUrl(path: string, data: Uint8Array): string {
+  const ext = path.slice(path.lastIndexOf(".") + 1).toLowerCase();
+  const type = ext === "svg" ? "svg+xml" : ext === "jpg" ? "jpeg" : ext;
+  return `data:image/${type};base64,${toBase64(data)}`;
+}
+
 function FileView(props: {
   path: string;
   file: InstalledFile;
-  pkg: string;
+  files: Map<string, InstalledFile>;
   /** Shows the install card above the rendered Markdown, with a command to add this package. */
   install?: string;
+  /** The package's folder in its repository, for what its tarball leaves out. */
+  repo?: string;
+  /** The package's tree path, where `repo` begins. */
+  root: string;
 }) {
-  const { path, file, pkg } = props;
+  const { path, file, files, repo, root } = props;
+  const { open } = useContext(Breadcrumb);
   const shown = useMemo(() => preview(file.path, file.data), [file]);
   const [source, setSource] = useState(false);
   const markdown = shown.lang === "md" || shown.lang === "markdown";
-  // Relative links and images in a README point into the published package.
-  const dir = file.path.slice(0, file.path.lastIndexOf("/") + 1);
+  // Relative links and images in a README point into the tree, which holds the tarball's files:
+  // an image shows from its bytes, a link opens the file here. What the tarball leaves out, such
+  // as a logo or a chart, is in the repository, where npm's own site finds it too.
+  const link = useMemo<Link>(
+    () => (value, image) => {
+      const url = URL.parse(value, TREE + path);
+      if (url?.origin !== TREE.slice(0, -1)) return url?.href ?? value;
+      const at = decodeURIComponent(url.pathname.slice(1));
+      const found = files.get(at);
+      if (found) return image ? dataUrl(at, found.data) : `#/${at}`;
+      if (repo && at.startsWith(root)) return repo + url.href.slice(TREE.length + root.length);
+    },
+    [path, files, repo, root],
+  );
   return (
     <Frame
       path={path}
@@ -108,7 +142,7 @@ function FileView(props: {
       }
     >
       {markdown && !source ? (
-        <Markdown text={shown.text} base={`https://cdn.jsdelivr.net/npm/${pkg}/${dir}`}>
+        <Markdown text={shown.text} link={link} onOpen={open}>
           {props.install && <InstallCard spec={props.install} />}
         </Markdown>
       ) : (

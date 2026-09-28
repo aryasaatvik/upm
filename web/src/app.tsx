@@ -330,6 +330,10 @@ export function App({ ready }: { ready?: Promise<unknown> }) {
                   setSidebar(true);
                   setReveal({ path });
                 },
+                open: (path) => {
+                  setSelected(path);
+                  setReveal({ path });
+                },
               }}
             >
               <Editor

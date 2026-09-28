@@ -9,7 +9,30 @@ import { Badge, ErrorBox, Icon, type IconName, Waiting } from "./ui.tsx";
 export function repoUrl(manifest: FullManifest | undefined): string | undefined {
   const repo =
     typeof manifest?.repository === "string" ? manifest.repository : manifest?.repository?.url;
-  return repo?.replace(/^git\+/, "").replace(/\.git$/, "");
+  if (!repo) return undefined;
+  // npm's shorthands, kept as written in the tarball's package.json: `owner/name`, `github:…`.
+  const short = /^(?:(github|gitlab|bitbucket):)?([\w.-]+\/[\w.-]+)$/.exec(repo);
+  if (short) {
+    const host = short[1] === "bitbucket" ? "bitbucket.org" : `${short[1] ?? "github"}.com`;
+    return `https://${host}/${short[2]!.replace(/\.git$/, "")}`;
+  }
+  return repo
+    .replace(/^git\+/, "")
+    .replace(/^git@([^:]+):/, "https://$1/")
+    .replace(/^(?:git|ssh):\/\/(?:git@)?/, "https://")
+    .replace(/\.git$/, "");
+}
+
+/**
+ * The package's folder on GitHub, as a `blob/` url: at the commit it was published from when the
+ * manifest says, and in `repository.directory` for a monorepo's package.
+ */
+export function sourceUrl(manifest: FullManifest | undefined): string | undefined {
+  const repo = repoUrl(manifest);
+  if (!repo?.startsWith("https://github.com/")) return undefined;
+  const dir = typeof manifest?.repository === "object" ? manifest.repository.directory : "";
+  const path = dir?.replace(/^\/+|\/+$/g, "");
+  return `${repo}/blob/${manifest?.gitHead || "HEAD"}/${path ? `${path}/` : ""}`;
 }
 
 export function Package({ view }: { view: View | undefined }) {

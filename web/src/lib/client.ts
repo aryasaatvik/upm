@@ -37,7 +37,9 @@ export type FullManifest = Manifest & {
   description?: string;
   license?: string;
   homepage?: string;
-  repository?: string | { url?: string };
+  repository?: string | { url?: string; directory?: string };
+  /** The commit it was published from: the registry's copy has it, the tarball's does not. */
+  gitHead?: string;
   keywords?: string[];
 };
 

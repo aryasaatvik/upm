@@ -4,7 +4,13 @@ import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "r
 import { schemeMedia } from "../theme.ts";
 import { Pulse, Waiting } from "./ui.tsx";
 
-type Renderer = (text: string, base: string) => string;
+/**
+ * Where a README's link or image goes: an absolute url, `#/<tree path>` for a file to open in the
+ * editor, or nothing when it has nowhere to go.
+ */
+export type Link = (value: string, image: boolean) => string | undefined;
+
+type Renderer = (text: string, link: Link) => string;
 
 let ready: Promise<Renderer> | undefined;
 
@@ -26,11 +32,16 @@ export function loadMarkdown(): Promise<Renderer> {
 
 /**
  * Markdown keeps raw HTML, and a README is the publisher's, so DOMPurify strips scripts and
- * other XSS before it goes into the page. `base` resolves the README's relative links and images.
+ * other XSS before it goes into the page. `link` resolves the README's relative links and images.
  * `children` go above it, in the same scroll.
  */
-export function Markdown(props: { text: string; base: string; children?: ReactNode }) {
-  const { text, base } = props;
+export function Markdown(props: {
+  text: string;
+  link: Link;
+  onOpen: (path: string) => void;
+  children?: ReactNode;
+}) {
+  const { text, link, onOpen } = props;
   const [loaded, setLoaded] = useState<Renderer | Error>();
   useEffect(() => {
     loadMarkdown().then(
@@ -39,15 +50,15 @@ export function Markdown(props: { text: string; base: string; children?: ReactNo
     );
   }, []);
   const html = useMemo(
-    () => (typeof loaded === "function" ? loaded(text, base) : ""),
-    [loaded, text, base],
+    () => (typeof loaded === "function" ? loaded(text, link) : ""),
+    [loaded, text, link],
   );
   if (!loaded) return <MarkdownSkeleton />;
   if (loaded instanceof Error) return <Waiting>md4x failed to load: {loaded.message}</Waiting>;
   return (
     <div
       className="h-full scroll-pt-(--covered-top) overflow-auto pt-(--covered-top) pb-(--covered-bottom)"
-      onClick={jump}
+      onClick={(e) => jump(e, onOpen)}
     >
       {props.children}
       <article className="readme" dangerouslySetInnerHTML={{ __html: html }} />
@@ -55,11 +66,15 @@ export function Markdown(props: { text: string; base: string; children?: ReactNo
   );
 }
 
-/** A `#heading` link scrolls the README; ids carry DOMPurify's `user-content-` prefix. */
-function jump(e: MouseEvent<HTMLElement>) {
+/**
+ * A `#heading` link scrolls the README; ids carry DOMPurify's `user-content-` prefix. A `#/<path>`
+ * link opens a file of the tree.
+ */
+function jump(e: MouseEvent<HTMLElement>, open: (path: string) => void) {
   const href = (e.target as Element).closest("a")?.getAttribute("href");
   if (!href?.startsWith("#")) return;
   e.preventDefault();
+  if (href.startsWith("#/")) return open(href.slice(2));
   const id = `user-content-${decodeURIComponent(href.slice(1))}`;
   e.currentTarget.querySelector(`[id="${CSS.escape(id)}"]`)?.scrollIntoView();
 }
@@ -123,26 +138,32 @@ function renderer(
   { renderToHtml }: typeof import("md4x"),
   purify: typeof import("dompurify").default,
 ): Renderer {
-  let base = "";
-  // Relative links and images point into the package; other pages open in a new tab.
+  let link: Link = (value) => value;
+  // Other pages open in a new tab.
   const resolve = (value: string, image: boolean) => {
-    const url = URL.parse(value, base)?.href ?? value;
+    const url = link(value, image);
     // A GitHub `blob/` link is a page, not the file: GitHub itself shows the raw one.
-    return image ? url.replace(GITHUB_BLOB, "https://raw.githubusercontent.com/$1/$2/") : url;
+    return image ? url?.replace(GITHUB_BLOB, "https://raw.githubusercontent.com/$1/$2/") : url;
   };
+  const set = (node: Element, name: string, value: string | undefined) =>
+    value === undefined ? node.removeAttribute(name) : node.setAttribute(name, value);
   purify.addHook("afterSanitizeAttributes", (node) => {
     const href = node.getAttribute("href");
-    if (href && !href.startsWith("#")) node.setAttribute("href", resolve(href, false));
+    if (href && !href.startsWith("#")) set(node, "href", resolve(href, false));
     const src = node.getAttribute("src");
-    if (src) node.setAttribute("src", resolve(src, true));
+    if (src) set(node, "src", resolve(src, true));
+    // Tailwind's preflight sets `height: auto` on images, over the attribute: a style wins it back.
+    const height = node.tagName === "IMG" && /^\d+(\.\d+)?/.exec(node.getAttribute("height") ?? "");
+    if (height) (node as HTMLElement).style.height = `${height[0]}px`;
     // `<picture>` sources: `url descriptor, url descriptor`.
     const srcset = node.getAttribute("srcset");
     if (srcset) {
-      const set = srcset.split(",").map((part) => {
+      const parts = srcset.split(",").flatMap((part) => {
         const [url = "", ...rest] = part.trim().split(/\s+/);
-        return [resolve(url, true), ...rest].join(" ");
+        const to = resolve(url, true);
+        return to ? [[to, ...rest].join(" ")] : [];
       });
-      node.setAttribute("srcset", set.join(", "));
+      set(node, "srcset", parts.join(", ") || undefined);
     }
     // A source for one scheme follows the site's toggle, not the system (src/theme.ts).
     const scheme = /^\(prefers-color-scheme:\s*(light|dark)\)$/.exec(
@@ -157,14 +178,14 @@ function renderer(
       node.setAttribute("rel", "noopener noreferrer");
     }
   });
-  return (text, url) => {
+  return (text, to) => {
     const html = renderToHtml(text, {
       headingIds: true,
       // rangi escapes the code; md4x puts what this returns in place of its own block.
       highlighter: (code, { lang }) =>
         `<pre>${highlightText(code, { lang: lang || "plain", lineNumbers: false })}</pre>`,
     });
-    base = url;
+    link = to;
     // Page-wide styles and forms stay out; ids get a prefix so they cannot clash with the app's.
     return purify.sanitize(html, {
       FORBID_TAGS: ["style", "form"],
