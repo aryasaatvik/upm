@@ -13,6 +13,10 @@ A minimal, zero-dependency, npm-registry-compatible package manager.
   npm may run repo scripts.
 - Do not run e2e tests on web, user will do it via their dev server and manual testing
 
+## Fork conventions
+
+This is the `@aryasaatvik/upm` fork of `unjs/upm`. Keep changes to upstream files small and put new behavior in new modules where practical. To sync, create `chore/upstream-<yyyy-mm-dd>` from `main`, merge `upstream/main`, check the fork diff and tests, then merge the sync branch back to `main`.
+
 ## Runtime boundary
 
 No runtime `node:` imports. Get builtins lazily through `src/builtin.ts` so a command

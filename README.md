@@ -16,6 +16,12 @@
 - 🔒 **Secure:** defaults to a 1-day [minimum release age](#release-age) and skips dependency lifecycle scripts.
 - 📦 **Lockfile compatibility:** supports existing `package-lock.json`, `pnpm-lock.yaml` and `bun.lock` out of the box.
 
+## Fork
+
+`@aryasaatvik/upm` is a light fork of [unjs/upm](https://github.com/unjs/upm) for Samva hosted installs on Cloudflare Workers and worker bundlers. The fork adds Workers runtime fixes; npm package-lock v3 read/write, npm-compatible hoisting, and an in-memory `./worker` entry are planned. Upstream remains the source of the core package manager.
+
+To sync upstream, create `chore/upstream-<yyyy-mm-dd>` from `main`, merge `upstream/main`, resolve fork-specific changes, and review the result before merging back to `main`.
+
 ## 🤔 Why another package manager?
 
 There are already several popular package managers:
