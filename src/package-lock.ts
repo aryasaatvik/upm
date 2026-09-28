@@ -253,6 +253,8 @@ export function toPackageLock(
     ...(Object.keys(bin).length && { bin }),
     ...(manifest.deprecated && { deprecated: manifest.deprecated }),
   };
+  for (const group of [...groups, "peerDependencies", "peerDependenciesMeta"] as const)
+    if (!manifest[group]) delete packages[""][group];
   for (const [path, key] of placement) {
     const pkg = resolution.packages[key];
     if (!pkg) throw new UpmError("EPLACE", `placement refers to absent package ${key}`);
