@@ -28,7 +28,18 @@ jobs:
         run: npx vitest run
       - if: runner.os == 'Linux'
         run: npm run lint
-      - if: runner.os == 'Linux'
-        run: node scripts/npm-ci-check.mjs
       # - uses: codecov/codecov-action@v5
       #   with: { token: "${{ secrets.CODECOV_TOKEN }}" }
+  npm-ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with: { node-version: lts/* }
+      - uses: actions/cache@v4
+        with:
+          path: ~/.upm/store
+          key: upm-store-${{ runner.os }}-${{ hashFiles('upm.lock') }}
+          restore-keys: upm-store-${{ runner.os }}-
+      - run: node ./upm install --frozen-lockfile
+      - run: node scripts/npm-ci-check.mjs

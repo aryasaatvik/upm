@@ -367,6 +367,8 @@ export async function resolveTree(
   function visitLocked(from: string, key: string): void {
     if (started.has(key)) return;
     started.add(key);
+    const entry = options.locked && packageMetadata(options.locked, key);
+    if (entry) pickedEntries.set(key, entry);
     const { dependencies, optionalDependencies = {}, ...pkg } = locked[key]!;
     const peers = pkg.peers ?? {};
     const found = { ...pkg, dependencies: {}, optional: true, dev: true };
