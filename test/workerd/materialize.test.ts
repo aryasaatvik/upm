@@ -11,7 +11,7 @@ describe("workerd email starter", () => {
       manifest,
       lock,
       production: true,
-      platform: { os: "workerd", cpu: "none" },
+      platform: "none",
       include: (path) => /\.(?:[cm]?js|[cm]?ts|json|css)$/.test(path),
     });
     const files: Files = {

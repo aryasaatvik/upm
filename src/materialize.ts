@@ -25,6 +25,7 @@ export interface MaterializeInput {
   include?: (path: string) => boolean;
   limits?: Partial<MaterializeLimits>;
   concurrency?: number;
+  /** Omit to keep the lock graph; pass a target to filter it, or "none" for Workers without a native platform. */
   platform?: Platform | "none";
   production?: boolean;
   signal?: AbortSignal;
@@ -52,8 +53,11 @@ export async function materialize(input: MaterializeInput): Promise<{
   checkPlacement(resolution, placement);
   let selected = resolution;
   try {
-    if (input.platform && input.platform !== "none")
-      selected = filterPlatformForTarget(resolution, input.platform);
+    if (input.platform)
+      selected = filterPlatformForTarget(
+        resolution,
+        input.platform === "none" ? { os: "none", cpu: "none", libc: undefined } : input.platform,
+      );
   } catch (error) {
     throw new UpmError("EPLATFORM", (error as Error).message);
   }

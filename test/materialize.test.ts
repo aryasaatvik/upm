@@ -123,5 +123,18 @@ describe("materialize", () => {
       setup({ lock: JSON.stringify(graph), platform: { os: "linux", cpu: "x64" } }).input,
     );
     expect(platform.packages).toBe(1);
+    const nativeFree = await materialize(
+      setup({ lock: JSON.stringify(graph), platform: "none" }).input,
+    );
+    expect(nativeFree.packages).toBe(1);
+    expect(nativeFree.files["node_modules/a/node_modules/b/index.js"]).toBeUndefined();
+
+    // A negated-only list excludes win32, so it still allows the non-native target.
+    graph.packages["node_modules/a/node_modules/b"].os = ["!win32"];
+    const negated = await materialize(
+      setup({ lock: JSON.stringify(graph), platform: "none" }).input,
+    );
+    expect(negated.packages).toBe(2);
+    expect(negated.files["node_modules/a/node_modules/b/index.js"]).toBeDefined();
   });
 });
