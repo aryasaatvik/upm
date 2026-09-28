@@ -1,7 +1,6 @@
-# Changelog
+## Upstream base
 
 This fork starts from upstream upm 1.2.0. Earlier entries are the upstream release history.
-
 
 ## v1.2.0
 

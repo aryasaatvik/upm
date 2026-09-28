@@ -26,6 +26,7 @@ const paper = tegami({
   ignore: ["upm-web"],
   npm: {
     client: "npm",
+    updateLockFile: false,
     trustedPublish: {
       provider: "github",
       workflow: "publish.yml",

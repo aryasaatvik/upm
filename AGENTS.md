@@ -19,7 +19,7 @@ This is the `@aryasaatvik/upm` fork of `unjs/upm`. Keep changes to upstream file
 
 ## Releases
 
-Write pending release notes in `.tegami/YYYY-MM-DD-<id>.md` with a `packages` entry for `npm:@aryasaatvik/upm` and a patch, minor or major bump. Run `npm run release:check` and `npm run tegami -- publish --dry-run` before release review. Tegami opens a version PR against `main`; after it is merged, `publish.yml` uses npm trusted publishing. The owner makes the first `0.1.0` publish manually and configures the trusted publisher before automated publishing can work.
+Write pending release notes in `.tegami/YYYY-MM-DD-<id>.md` with a `packages` entry for `npm:@aryasaatvik/upm` and a patch, minor or major bump. Run `npm run release:check` and `npm run tegami -- publish --dry-run` before release review. Tegami opens a version PR against `main`; after it is merged, `publish.yml` uses npm trusted publishing. The owner makes the first `0.1.0` publish manually and configures the trusted publisher before automated publishing can work. Tegami leaves `upm.lock` untouched during a version bump: npm is the publishing client, while upm owns dependency installation, and the root package version is not part of upm’s frozen dependency check.
 
 ## Runtime boundary
 
