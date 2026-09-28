@@ -1,7 +1,7 @@
 import { UpmError } from "./error.ts";
-import { readForeign } from "./foreign-lock.ts";
+import { readForeign } from "./foreign-lock-core.ts";
 import { checkPlacement, hoist } from "./hoist.ts";
-import { fromLockfile } from "./lock.ts";
+import { fromLockfile } from "./lock-core.ts";
 import {
   formatPackageLock,
   fromPackageLock,
@@ -9,7 +9,7 @@ import {
   toPackageLock,
 } from "./package-lock.ts";
 import type { PackageJson, PackageLockEntry } from "./package-lock.ts";
-import { createRegistry, registryBase } from "./registry.ts";
+import { createRegistry } from "./registry.ts";
 import type { Registry } from "./registry.ts";
 import { resolveTree } from "./resolve.ts";
 

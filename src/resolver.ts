@@ -12,8 +12,8 @@ export type {
   RootManifest,
   RootSpecs,
 } from "./resolve.ts";
-export { formatLockfile, fromLockfile, parseLockfile, toLockfile } from "./lock.ts";
-export type { LockEntry, Lockfile, WorkspaceEntry } from "./lock.ts";
+export { formatLockfile, fromLockfile, parseLockfile, toLockfile } from "./lock-core.ts";
+export type { LockEntry, Lockfile, WorkspaceEntry } from "./lock-core.ts";
 export { parseSpec } from "./spec.ts";
 export type { PackumentView, PickOptions } from "./pick.ts";
 export type { Spec } from "./spec.ts";

@@ -19,7 +19,8 @@
   "types": "./dist/index.d.mts",
   "exports": {
     ".": "./dist/index.mjs",
-    "./resolver": "./dist/resolver.mjs"
+    "./resolver": "./dist/resolver.mjs",
+    "./worker": "./dist/worker/worker.mjs"
   },
   "publishConfig": {
     "access": "public"

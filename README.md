@@ -18,9 +18,9 @@
 
 ## Fork
 
-`@aryasaatvik/upm` is a light fork of [unjs/upm](https://github.com/unjs/upm) for Samva hosted installs on Cloudflare Workers and worker bundlers. The fork adds Workers runtime fixes; npm package-lock v3 read/write, npm-compatible hoisting, and an in-memory `./worker` entry are planned. Upstream remains the source of the core package manager.
+`@aryasaatvik/upm` is a light fork of [unjs/upm](https://github.com/unjs/upm) for Samva hosted installs on Cloudflare Workers and worker bundlers. The fork adds Workers runtime fixes, npm package-lock v3 read/write, npm-compatible hoisting, and an in-memory `./worker` entry. Upstream remains the source of the core package manager.
 
-After the first release, install the fork with `npm i @aryasaatvik/upm`. Its resolver entry is `@aryasaatvik/upm/resolver`; the command names remain `upm` and `upx`.
+After the first release, install the fork with `npm i @aryasaatvik/upm`. Its portable entries are `@aryasaatvik/upm/resolver` and `@aryasaatvik/upm/worker`; the command names remain `upm` and `upx`.
 
 To sync upstream, create `chore/upstream-<yyyy-mm-dd>` from `main`, merge `upstream/main`, resolve fork-specific changes, and review the result before merging back to `main`.
 
@@ -266,6 +266,15 @@ requiring Node. It does not install files or read `.npmrc` for you. See
 [`src/resolver.ts`](src/resolver.ts) for its exports.
 The npm v3 lock APIs keep every package location; unsupported links and bundled
 entries raise `ELOCK`, while a changed root manifest raises `ELOCKSTALE`.
+
+### Worker entry
+
+`@aryasaatvik/upm/worker` exports `lockProject` to validate, update or convert a lock in memory,
+and `materialize` to turn a frozen npm v3 lock into a map of `node_modules/...` file bytes.
+Pass `manifest` and the lock text; `materialize` also accepts an injected `fetch`, an optional
+integrity-keyed `tarballCache`, a per-file `include` filter, limits, and an explicit platform.
+The entry does not read `.npmrc` or write to the filesystem. In a Worker, pass a platform or
+`"none"` to choose whether optional platform packages are filtered.
 
 ### Store backend
 
