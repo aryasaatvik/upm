@@ -15,5 +15,7 @@ core:packages:
       - 2026-09-28-worker-entry.md
     id: npm:@aryasaatvik/upm
     updated: true
+npm:mark-latest:
+  - id: npm:@aryasaatvik/upm
 npm:packages:
   - id: npm:@aryasaatvik/upm
