@@ -1,6 +1,6 @@
 import { UpmError } from "./error.ts";
 import { normalizeBin } from "./normalize-bin.ts";
-import { declaredSpecs, keyOf } from "./resolve.ts";
+import { declaredSpecs } from "./resolve.ts";
 import type { Resolution, ResolvedPackage, RootManifest, RootSpecs } from "./resolve.ts";
 
 export interface PackageLockEntry {
@@ -189,4 +189,13 @@ export function fromPackageLock(
   const resolution: Resolution = { root, packages, warnings: [] };
   metadata.set(resolution, { top: lock, entries });
   return { resolution, placement };
+}
+
+/** Original locations are the best stable choice when an npm lock supplied this graph. */
+export function npmPlacement(resolution: Resolution): Placement | undefined {
+  const source = metadata.get(resolution);
+  if (!source) return undefined;
+  return new Map(
+    [...source.entries].map(([path, entry]) => [path, `${pathName(path)}@${entry.version}`]),
+  );
 }
