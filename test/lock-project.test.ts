@@ -45,6 +45,37 @@ describe("lockProject", () => {
     expect(result).toEqual({ text: lock, changed: false, warnings: [] });
   });
 
+  it.each([
+    ["git+ssh://git@github.com/example/a.git", "git", "git dependencies are not supported"],
+    ["git+https://github.com/example/a.git", "git", "git dependencies are not supported"],
+    ["github:example/a", "git", "git dependencies are not supported"],
+    ["file:../a.tgz", "file", "local file dependencies are not supported"],
+    ["https://other.test/a.tgz", "tarball", "tarball outside allowed registries"],
+  ])("refuses %s in an update before fetching", async (resolved, kind, message) => {
+    const manifest = JSON.parse(await fixture("nested", "package.json"));
+    const graph = JSON.parse(await fixture("nested", "package-lock.json"));
+    const key = "node_modules/ansi-regex";
+    graph.packages[key].resolved = resolved;
+    let fetched = false;
+    await expect(
+      lockProject({
+        manifest,
+        lock: JSON.stringify(graph),
+        mode: "update",
+        registry: "https://registry.test",
+        fetch: async () => {
+          fetched = true;
+          throw new Error("unexpected fetch");
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "ELOCK",
+      message: expect.stringContaining(message),
+      detail: { key, resolved, kind },
+    });
+    expect(fetched).toBe(false);
+  });
+
   it("updates one direct package while keeping unrelated versions and placements", async () => {
     const manifest = JSON.parse(await fixture("nested", "package.json"));
     const lock = await fixture("nested", "package-lock.json");

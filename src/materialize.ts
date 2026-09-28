@@ -1,7 +1,7 @@
 import { UpmError } from "./error.ts";
 import { checkPlacement } from "./hoist.ts";
 import { createVerifier, parseIntegrity } from "./integrity.ts";
-import { fromPackageLock, parsePackageLock } from "./package-lock.ts";
+import { fromPackageLock, parsePackageLock, supportedResolved } from "./package-lock.ts";
 import type { PackageJson } from "./package-lock.ts";
 import { filterPlatformForTarget } from "./resolve.ts";
 import type { Platform } from "./resolve.ts";
@@ -80,32 +80,10 @@ export async function materialize(input: MaterializeInput): Promise<{
   let next = 0;
   let unpacking: Promise<unknown> = Promise.resolve();
   const fetched = new Map<string, Promise<Uint8Array>>();
-  const registries = (input.registries ?? [input.registry ?? "https://registry.npmjs.org"]).map(
-    (registry) => new URL(registry),
-  );
-  const allowedUrl = (key: string, resolved: string): string => {
-    let url: URL;
-    try {
-      url = new URL(resolved);
-    } catch {
-      throw new UpmError("ELOCK", `invalid tarball URL for ${key}`, { key, resolved });
-    }
-    const allowed = registries.some((registry) => {
-      const prefix = registry.pathname.endsWith("/") ? registry.pathname : `${registry.pathname}/`;
-      return (
-        (url.protocol === "https:" ||
-          (url.protocol === "http:" && registry.protocol === "http:")) &&
-        url.origin === registry.origin &&
-        url.pathname.startsWith(prefix)
-      );
-    });
-    if (!allowed)
-      throw new UpmError("ELOCK", `tarball URL is outside allowed registries for ${key}`, {
-        key,
-        resolved,
-      });
-    return url.href;
-  };
+  const registries = input.registries ?? [input.registry ?? "https://registry.npmjs.org"];
+  const allowedUrl = (key: string, resolved: string) =>
+    supportedResolved(key, resolved, registries);
+  for (const [path, key] of placement) allowedUrl(path, resolution.packages[key]!.resolved);
 
   const verified = async (bytes: Uint8Array, integrity: string): Promise<boolean> => {
     try {

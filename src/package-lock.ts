@@ -62,6 +62,37 @@ export function lookup(placement: Placement, from: string, name: string): string
   }
 }
 
+/** Only registry tarballs can be installed from the portable npm lock API. */
+export function supportedResolved(key: string, resolved: string, registries: string[]): string {
+  const kind = /^(?:git(?:\+[^:]+)?:|github:)/i.test(resolved)
+    ? "git"
+    : /^file:/i.test(resolved)
+      ? "file"
+      : "tarball";
+  const refusal = (message: string): never => {
+    throw new UpmError("ELOCK", `${message} for ${key}`, { key, resolved, kind });
+  };
+  if (kind === "git") refusal("git dependencies are not supported");
+  if (kind === "file") refusal("local file dependencies are not supported");
+  let url: URL;
+  try {
+    url = new URL(resolved);
+  } catch {
+    return refusal("invalid tarball URL");
+  }
+  const allowed = registries.some((base) => {
+    const registry = new URL(base);
+    const prefix = registry.pathname.endsWith("/") ? registry.pathname : `${registry.pathname}/`;
+    return (
+      (url.protocol === "https:" || (url.protocol === "http:" && registry.protocol === "http:")) &&
+      url.origin === registry.origin &&
+      url.pathname.startsWith(prefix)
+    );
+  });
+  if (!allowed) refusal("tarball outside allowed registries");
+  return url.href;
+}
+
 export function parsePackageLock(text: string): PackageLock {
   let raw: unknown;
   try {

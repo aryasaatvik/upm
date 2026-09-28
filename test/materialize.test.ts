@@ -66,6 +66,24 @@ describe("materialize", () => {
     }
   });
 
+  it.each([
+    ["git+ssh://git@github.com/example/a.git", "git", "git dependencies are not supported"],
+    ["git+https://github.com/example/a.git", "git", "git dependencies are not supported"],
+    ["github:example/a", "git", "git dependencies are not supported"],
+    ["file:../a.tgz", "file", "local file dependencies are not supported"],
+    ["https://other.test/a.tgz", "tarball", "tarball outside allowed registries"],
+  ])("refuses %s before any fetch", async (resolved, kind, message) => {
+    const graph = JSON.parse(lock);
+    graph.packages["node_modules/a"].resolved = resolved;
+    const { calls, input } = setup({ lock: JSON.stringify(graph) });
+    await expect(materialize(input)).rejects.toMatchObject({
+      code: "ELOCK",
+      message: expect.stringContaining(message),
+      detail: { key: "node_modules/a", resolved, kind },
+    });
+    expect(calls).toEqual([]);
+  });
+
   it("requires the configured registry path prefix", async () => {
     const { input } = setup({ registries: ["https://registry.test/packages/"] });
     await expect(materialize(input)).rejects.toMatchObject({
