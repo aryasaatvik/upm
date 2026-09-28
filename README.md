@@ -34,31 +34,6 @@ Furthermore:
 💡 upm started as an experiment: how fast and small can an npm client be in pure TypeScript,
 making the most of what Node.js already provides? And answer turned out to be possbile!
 
-## Performance
-
-upm aims to make cached and repeat installs cheap by reusing files and saved
-install state. Actual times depend on the package tree, network, filesystem, and
-available CPU.
-
-<p>
-  <a href="https://github.com/unjs/upm/blob/main/bench/charts/warm.svg"><img src="bench/charts/warm.svg" alt="Warm install time" width="100%"></a>
-</p>
-<p>
-  <a href="https://github.com/unjs/upm/blob/main/bench/charts/cold.svg"><img src="bench/charts/cold.svg" alt="Cold install time" width="100%"></a>
-</p>
-<p>
-  <a href="https://github.com/unjs/upm/blob/main/bench/charts/repeat.svg"><img src="bench/charts/repeat.svg" alt="Repeat install time" width="49%"></a>
-  <a href="https://github.com/unjs/upm/blob/main/bench/charts/size.svg"><img src="bench/charts/size.svg" alt="Package manager size on disk" width="49%"></a>
-</p>
-
-Other charts: Peak memory ([cold](https://github.com/unjs/upm/blob/main/bench/charts/cold.memory.svg), [warm](https://github.com/unjs/upm/blob/main/bench/charts/warm.memory.svg),
-[repeat](https://github.com/unjs/upm/blob/main/bench/charts/repeat.memory.svg)). CPU time ([cold](https://github.com/unjs/upm/blob/main/bench/charts/cold.cpu.svg),
-[warm](https://github.com/unjs/upm/blob/main/bench/charts/warm.cpu.svg), [repeat](https://github.com/unjs/upm/blob/main/bench/charts/repeat.cpu.svg)).
-
-The [benchmark guide](bench/README.md) explains how to compare cold, warm, and
-repeat installs with other package managers. It uses private caches and disables
-lifecycle scripts for a fairer comparison.
-
 ## Get started
 
 Install upm globally. The scripts check for Node.js 22.3+, then install upm with npm.
@@ -178,6 +153,31 @@ lockfile is out of date. A URL is not read again: the lockfile pins its bytes, a
 install that has to fetch it fails with `EINTEGRITY` if the server now sends others. To
 take a new version, point the dependency at a new URL, or remove it and add it again.
 Credentials in `.npmrc` are sent to a URL on the same host, as for a registry.
+
+## Performance
+
+upm aims to make cached and repeat installs cheap by reusing files and saved
+install state. Actual times depend on the package tree, network, filesystem, and
+available CPU.
+
+<p>
+  <a href="https://raw.githubusercontent.com/unjs/upm/main/bench/charts/warm.svg"><img src="bench/charts/warm.svg" alt="Warm install time" width="100%"></a>
+</p>
+<p>
+  <a href="https://raw.githubusercontent.com/unjs/upm/main/bench/charts/cold.svg"><img src="bench/charts/cold.svg" alt="Cold install time" width="100%"></a>
+</p>
+<p>
+  <a href="https://raw.githubusercontent.com/unjs/upm/main/bench/charts/repeat.svg"><img src="bench/charts/repeat.svg" alt="Repeat install time" width="49%"></a>
+  <a href="https://raw.githubusercontent.com/unjs/upm/main/bench/charts/size.svg"><img src="bench/charts/size.svg" alt="Package manager size on disk" width="49%"></a>
+</p>
+
+Other charts: Peak memory ([cold](https://raw.githubusercontent.com/unjs/upm/main/bench/charts/cold.memory.svg), [warm](https://raw.githubusercontent.com/unjs/upm/main/bench/charts/warm.memory.svg),
+[repeat](https://raw.githubusercontent.com/unjs/upm/main/bench/charts/repeat.memory.svg)). CPU time ([cold](https://raw.githubusercontent.com/unjs/upm/main/bench/charts/cold.cpu.svg),
+[warm](https://raw.githubusercontent.com/unjs/upm/main/bench/charts/warm.cpu.svg), [repeat](https://raw.githubusercontent.com/unjs/upm/main/bench/charts/repeat.cpu.svg)).
+
+The [benchmark guide](bench/README.md) explains how to compare cold, warm, and
+repeat installs with other package managers. It uses private caches and disables
+lifecycle scripts for a fairer comparison.
 
 ## JavaScript API
 
