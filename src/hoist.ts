@@ -11,8 +11,60 @@ const parentOf = (path: string): string => {
 const nameOf = (key: string, pkg: ResolvedPackage) => pkg.name;
 const keyFor = (name: string, version: string): string => `${name}@${version}`;
 
+function reachableKeys(resolution: Resolution): Set<string> {
+  const seen = new Set<string>();
+  const pending = Object.entries(resolution.root.dependencies).map(([name, version]) =>
+    keyFor(name, version),
+  );
+  while (pending.length) {
+    const key = pending.pop()!;
+    if (seen.has(key)) continue;
+    const pkg = resolution.packages[key];
+    if (!pkg) throw new UpmError("EPLACE", `missing ${key}`);
+    seen.add(key);
+    for (const [name, version] of Object.entries({
+      ...pkg.dependencies,
+      ...pkg.optionalDependencies,
+    }))
+      pending.push(keyFor(name, version));
+  }
+  return seen;
+}
+
+function lookupPath(placement: Placement, from: string, name: string): string | undefined {
+  for (let dir = from; ; dir = parentOf(dir)) {
+    const path = `${dir ? `${dir}/` : ""}node_modules/${name}`;
+    if (placement.has(path)) return path;
+    if (!dir) return undefined;
+  }
+}
+
+function reachablePaths(resolution: Resolution, placement: Placement): Set<string> {
+  const seen = new Set<string>();
+  const pending = Object.entries(resolution.root.dependencies).map(
+    ([name]) => `node_modules/${name}`,
+  );
+  while (pending.length) {
+    const path = pending.pop()!;
+    if (seen.has(path)) continue;
+    const key = placement.get(path);
+    const pkg = key && resolution.packages[key];
+    if (!pkg) continue;
+    seen.add(path);
+    for (const [name, version] of Object.entries({
+      ...pkg.dependencies,
+      ...pkg.optionalDependencies,
+    })) {
+      const target = lookupPath(placement, name in (pkg.peers ?? {}) ? parentOf(path) : path, name);
+      if (target && placement.get(target) === keyFor(name, version)) pending.push(target);
+    }
+  }
+  return seen;
+}
+
 /** Check every resolved edge with Node's upward lookup, including peer position. */
 export function checkPlacement(resolution: Resolution, placement: Placement): void {
+  const needed = reachableKeys(resolution);
   const edge = (from: string, name: string, version: string, peer = false) => {
     const expected = keyFor(name, version);
     const found = lookup(placement, peer ? parentOf(from) : from, name);
@@ -31,6 +83,7 @@ export function checkPlacement(resolution: Resolution, placement: Placement): vo
   for (const [name, version] of Object.entries(resolution.root.dependencies))
     edge("", name, version);
   for (const [path, key] of placement) {
+    if (!needed.has(key)) throw new UpmError("EPLACE", `${path} is unreachable`);
     const pkg = resolution.packages[key];
     if (!pkg) throw new UpmError("EPLACE", `${path} refers to absent ${key}`);
     if (nameOf(key, pkg) !== path.slice(path.lastIndexOf("node_modules/") + 13))
@@ -48,7 +101,7 @@ export function checkPlacement(resolution: Resolution, placement: Placement): vo
     }
   }
   const placedKeys = new Set(placement.values());
-  for (const key of Object.keys(resolution.packages))
+  for (const key of needed)
     if (!placedKeys.has(key)) throw new UpmError("EPLACE", `${key} has no placement`);
 }
 
@@ -58,12 +111,20 @@ export function hoist(resolution: Resolution, previous?: Placement): Placement {
   if (original) {
     try {
       checkPlacement(resolution, original);
+      // A valid npm lock already records the exact locations to keep.
       return new Map(original);
     } catch {
-      /* Rebuild moved graphs. */
+      // Keep valid locations below while repairing a changed graph.
     }
   }
-  const placed: Placement = new Map();
+  const needed = reachableKeys(resolution);
+  const placed: Placement = new Map(
+    [...(original ?? [])].filter(
+      ([path, key]) =>
+        needed.has(key) &&
+        resolution.packages[key]?.name === path.slice(path.lastIndexOf("node_modules/") + 13),
+    ),
+  );
   const roots: string[] = [];
   const edges: { from: string; name: string; key: string; peer: boolean }[] = [];
   const direct = Object.entries(resolution.root.dependencies);
@@ -71,11 +132,35 @@ export function hoist(resolution: Resolution, previous?: Placement): Placement {
     const key = keyFor(name, version);
     if (!resolution.packages[key]) throw new UpmError("EPLACE", `missing ${key}`);
     const path = `node_modules/${name}`;
-    if (placed.has(path) && placed.get(path) !== key)
-      throw new UpmError("EPLACE", `conflicting root ${name}`);
     placed.set(path, key);
     roots.push(path);
     edges.push({ from: "", name, key, peer: false });
+  }
+  for (const [path, key] of placed) {
+    if (roots.includes(path)) continue;
+    const pkg = resolution.packages[key]!;
+    const brokenPeer =
+      Object.keys(pkg.peers ?? {}).some((name) => {
+        const version = pkg.dependencies[name] ?? pkg.optionalDependencies?.[name];
+        return version && lookup(placed, parentOf(path), name) !== keyFor(name, version);
+      }) ||
+      Object.entries(pkg.peerDependencies ?? {}).some(([name, range]) => {
+        if (name in pkg.dependencies && !(name in (pkg.peers ?? {}))) return false;
+        const found = lookup(placed, parentOf(path), name);
+        return !!found && !satisfies(resolution.packages[found]?.version ?? "", range);
+      });
+    if (brokenPeer) placed.delete(path);
+  }
+  for (const path of reachablePaths(resolution, placed)) {
+    const pkg = resolution.packages[placed.get(path)!]!;
+    for (const [name, version] of Object.entries({
+      ...pkg.dependencies,
+      ...pkg.optionalDependencies,
+    })) {
+      const peer = name in (pkg.peers ?? {});
+      if (lookup(placed, peer ? parentOf(path) : path, name) === keyFor(name, version))
+        edges.push({ from: path, name, key: keyFor(name, version), peer });
+    }
   }
   const visited = new Set<string>();
   const visit = (from: string): void => {
@@ -95,6 +180,8 @@ export function hoist(resolution: Resolution, previous?: Placement): Placement {
       const already = lookup(placed, context, name);
       if (already === key) {
         edges.push({ from, name, key, peer });
+        const path = lookupPath(placed, context, name);
+        if (path) children.push(path);
         continue;
       }
       const ancestry: string[] = [];
@@ -133,6 +220,8 @@ export function hoist(resolution: Resolution, previous?: Placement): Placement {
     for (const child of children) visit(child);
   };
   for (const path of roots) visit(path);
+  const used = reachablePaths(resolution, placed);
+  for (const path of placed.keys()) if (!used.has(path)) placed.delete(path);
   checkPlacement(resolution, placed);
   return placed;
 }
