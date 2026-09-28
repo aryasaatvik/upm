@@ -356,6 +356,7 @@ installs both builds on Linux.
 upm run                   # list scripts
 upm run build
 upm test --watch           # short for upm run test --watch
+upm vitest --run           # no vitest script: runs node_modules/.bin/vitest
 upm run test -- --watch    # the first -- is optional
 upm run --dir ./app build
 upm run --if-present lint  # no lint script is not an error
@@ -371,7 +372,8 @@ Scripts run in a shell from the selected package directory. Local
 command-line tools. Script output goes straight to your terminal.
 
 Put upm's own options **before the script name**. Everything after the name is
-passed to the script. Only the named script runs: upm does not run `prebuild`,
+passed to the script. `upm <name>` without `run` falls back to an installed bin of
+that name when there is no such script; it never installs one. Only the named script runs: upm does not run `prebuild`,
 `postbuild`, or other pre/post hooks automatically.
 
 Without workspace options, `run` uses the `package.json` in the current directory,

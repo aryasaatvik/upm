@@ -111,7 +111,8 @@ Notes
   run installs the tree first (a no-op when it is current), then uses a project shell
   with local/parent bins on PATH; no pre/post scripts.
   Put upm flags before the script; later args pass through (-- optional).
-  run alone lists scripts; upm test = upm run test.
+  run alone lists scripts; upm test = upm run test. upm <name> with no such script
+  runs an installed bin of that name.
   exec (also upx) uses local bins, else installs into the root's node_modules/.upm/.exec
   (or ~/.upm/exec) with the project registry. Use -p for packages, -c for a shell line.
 
@@ -687,7 +688,7 @@ async function runCommand(cli: Cli): Promise<number> {
     // package.json that is there but broken is still the news, and so is a --dir that is not.
     const cause = (error as { cause?: { code?: string } }).cause;
     if (cli.implied && !selects && cli.dir === undefined && cause?.code === "ENOENT") {
-      return usage(`unknown command "${name}"`);
+      return (await installedBin(cli, name, args)) ?? usage(`unknown command "${name}"`);
     }
     throw error;
   }
@@ -695,10 +696,24 @@ async function runCommand(cli: Cli): Promise<number> {
   if (selects || cli.ifPresent || !own?.missing) return result.code;
   const names = Object.keys((await listScripts({ dir: cli.dir }))[0]!.scripts);
   const have = names.length > 0 ? ` — the scripts are ${names.join(", ")}` : "";
-  if (cli.implied)
+  if (cli.implied) {
+    const code = await installedBin(cli, name, args);
+    if (code !== undefined) return code;
     return usage(`unknown command "${name}", and no such script in ${own.file}${have}`);
+  }
   fail(`missing script "${name}" in ${own.file}${have} (ENOSCRIPT)`);
   return 1;
+}
+
+/**
+ * `upm vitest` with no such script: a bin already in a `node_modules/.bin` above, as pnpm
+ * runs one. Never the registry, so a typo stays an unknown command.
+ */
+async function installedBin(cli: Cli, name: string, args: string[]): Promise<number | undefined> {
+  const { localBin, selfBin } = await import("./exec.ts");
+  const dir = builtin.path.resolve(cli.dir ?? globalThis.process.cwd());
+  if (!((await selfBin(dir, name)) ?? (await localBin(dir, name)))) return undefined;
+  return await execCommand({ ...cli, specs: [name, ...args] });
 }
 
 async function execCommand(cli: Cli): Promise<number> {

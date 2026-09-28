@@ -320,6 +320,41 @@ describe("cli process", () => {
     }
   });
 
+  it("runs an installed bin for a word that is no script", async () => {
+    const dir = await realpath(await mkdtemp(join(tmpdir(), "upm-cli-")));
+    try {
+      // A node bin behind both shims, as upm links one: `sh` runs `hi`, cmd runs `hi.cmd`.
+      const bins = join(dir, "node_modules", ".bin");
+      await mkdir(join(dir, "node_modules", "hi"), { recursive: true });
+      await mkdir(bins);
+      await writeFile(
+        join(dir, "node_modules", "hi", "cli.js"),
+        "console.log(JSON.stringify(process.argv.slice(2)))",
+      );
+      const sh = '#!/bin/sh\nexec node "$(dirname "$0")/../hi/cli.js" "$@"\n';
+      await writeFile(join(bins, "hi"), sh, { mode: 0o755 });
+      await writeFile(join(bins, "hi.cmd"), '@"node" "%~dp0..\\hi\\cli.js" %*\r\n');
+      const hi = async (...args: string[]) =>
+        (await run(process.execPath, [CLI, ...args], { cwd: dir })).stdout;
+
+      // No package.json: the bin is still there to run.
+      expect(JSON.parse(await hi("hi", "a b", "x&y"))).toEqual(["a b", "x&y"]);
+
+      // A script of the same name comes first.
+      await writeFile(join(dir, "package.json"), '{ "scripts": { "hi": "echo script" } }');
+      expect(await hi("-s", "hi")).toMatch(/^script\r?\n$/);
+
+      await writeFile(join(dir, "package.json"), "{}");
+      expect(JSON.parse(await hi("hi", "x"))).toEqual(["x"]);
+
+      // `run` names a script, so only the bare word falls back.
+      const named = await hi("run", "hi").catch((e: { code: number }) => e);
+      expect(named).toMatchObject({ code: 1 });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("exits 2 on an unknown flag", async () => {
     const error = await run(process.execPath, [CLI, "resolve", "--nope"]).catch((e: unknown) => e);
     expect(error).toMatchObject({ code: 2 });
