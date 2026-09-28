@@ -605,8 +605,7 @@ function installed(
     return JSON.stringify({ ...out, dropped: missingOptional, upToDate, seconds }, undefined, 2);
   }
   for (const id of missingOptional) note(`${id} is missing from the store and was not linked`);
-  // Not a problem, but silence about a number this large would make the package count look
-  // like it disagrees with the lockfile.
+  // Shown so the count does not seem to disagree with the lockfile.
   const others = otherPlatforms > 0 ? ` (+${otherPlatforms} skipped)` : "";
   const time = ` in ${ms < 1000 ? `${ms}ms` : `${seconds}s`}`;
   const plural = workspaces > 0 ? `, ${workspaces} workspace${workspaces === 1 ? "" : "s"}` : "";
