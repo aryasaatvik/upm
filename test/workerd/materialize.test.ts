@@ -22,7 +22,7 @@ describe("workerd email starter", () => {
         dependencies: {},
       }),
       "wrangler.json": JSON.stringify({
-        compatibility_date: "2026-09-20",
+        compatibility_date: "2025-01-01",
         compatibility_flags: ["nodejs_compat"],
       }),
       "src/index.js": `

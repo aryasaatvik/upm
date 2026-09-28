@@ -9,7 +9,8 @@
     "upx": "./dist/upx.mjs"
   },
   "workspaces": [
-    "web"
+    "web",
+    "test/workerd"
   ],
   "files": [
     "dist"
@@ -36,13 +37,12 @@
     "test": "npm run lint && npm run typecheck && vitest run --coverage",
     "typecheck": "tsc --noEmit --skipLibCheck",
     "tegami": "node scripts/tegami.mts",
+    "test:workerd": "npm run test -w upm-workerd-test",
     "release:check": "npm run lint && npm run typecheck && vitest run"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.22.0",
-    "@cloudflare/worker-bundler": "^0.2.4",
     "@types/node": "latest",
-    "@vitest/coverage-v8": "^4.1.0",
+    "@vitest/coverage-v8": "latest",
     "automd": "latest",
     "jup": "latest",
     "obuild": "latest",
@@ -50,8 +50,7 @@
     "oxlint": "latest",
     "tegami": "^1.5.0",
     "typescript": "latest",
-    "vitest": "^4.1.0",
-    "workerd": "1.20260928.1"
+    "vitest": "latest"
   },
   "devEngines": {
     "packageManager": {

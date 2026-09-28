@@ -23,7 +23,7 @@ const upmTag = (): TegamiPlugin => ({
 if (rootPackage.name !== "@aryasaatvik/upm") throw new Error("unexpected release package");
 
 const paper = tegami({
-  ignore: ["upm-web"],
+  ignore: ["upm-web", "upm-workerd-test"],
   npm: {
     client: "npm",
     updateLockFile: false,
