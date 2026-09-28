@@ -1,0 +1,13 @@
+{
+  "name": "upm-workerd-test",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@cloudflare/worker-bundler": "^0.2.4",
+    "vitest": "^4.1.0"
+  }
+}

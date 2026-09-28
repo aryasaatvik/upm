@@ -64,6 +64,12 @@ export default defineBuildConfig({
       minify: true,
       input: ["./src/index.ts", "./src/resolver.ts", "./src/upm.ts", "./src/upx.ts"],
     },
+    {
+      type: "bundle",
+      minify: true,
+      input: ["./src/worker.ts"],
+      outDir: "./dist/worker",
+    },
   ],
   hooks: {
     rolldownConfig(config) {
@@ -86,8 +92,9 @@ export default defineBuildConfig({
       config.codeSplitting = {
         ...(typeof splitting === "object" ? splitting : {}),
         groups: [
-          group("limit", "builtin|runtime|limit|normalize-bin|util|integrity"),
-          group("unpack", "unpack|tar"),
+          group("limit", "builtin|runtime|limit|normalize-bin|integrity"),
+          group("unpack", "unpack"),
+          group("tar", "tar"),
           group("registry", "registry|pick|pluck|semver|spec|dns"),
           group("resolve", "resolve|lock"),
           group(

@@ -36,7 +36,11 @@ beforeAll(async () => {
   const entries = config.entries!.map((entry) => {
     // A string entry keeps obuild's own `dist`, which it empties first: the real build.
     if (typeof entry === "string") throw new Error(`give ${entry} as an object entry`);
-    return { ...entry, outDir: out, dts: false };
+    return {
+      ...entry,
+      outDir: entry.input?.includes("./src/worker.ts") ? join(out, "worker") : out,
+      dts: false,
+    };
   });
   await build({ ...config, cwd: join(import.meta.dirname, ".."), entries });
   const manifest = { name: "a", version: "1.0.0", dist: { tarball: "", integrity: "" } };
@@ -76,6 +80,52 @@ async function bundled(format: "esm" | "cjs"): Promise<Pools> {
 }
 
 describe("dist", () => {
+  it("bundles the worker entry without filesystem installation modules", async () => {
+    const seen = new Set<string>();
+    const visit = async (file: string): Promise<string> => {
+      if (seen.has(file)) return "";
+      seen.add(file);
+      const code = await readFile(file, "utf8");
+      const imports = [...code.matchAll(/(?:from\s*|import\s*)["'](\.[^"']+)["']/g)];
+      return (
+        code +
+        (await Promise.all(imports.map((match) => visit(join(file, "..", match[1]!))))).join("")
+      );
+    };
+    const sourceFiles = new Set<string>();
+    const sourceImports = async (file: string): Promise<void> => {
+      if (sourceFiles.has(file)) return;
+      sourceFiles.add(file);
+      const source = await readFile(file, "utf8");
+      for (const match of source.matchAll(
+        /^\s*(?!(?:import|export)\s+type\b)(?:import|export)\s+(?:[^"'\n]*?\s+from\s+)?["'](\.[^"']+)["']/gm,
+      )) {
+        await sourceImports(join(file, "..", match[1]!));
+      }
+    };
+    await sourceImports(join(import.meta.dirname, "../src/worker.ts"));
+    const forbidden = [
+      "api.ts",
+      "store.ts",
+      "link.ts",
+      "state.ts",
+      "unpack.ts",
+      "unpack-pool.ts",
+      "unpack-worker.ts",
+      "shim.ts",
+      "gc.ts",
+      "workers.ts",
+      "cli.ts",
+    ];
+    const imported = new Set([...sourceFiles].map((file) => file.split("/").at(-1)));
+    expect(forbidden.filter((file) => imported.has(file))).toEqual([]);
+    const code = await visit(join(out, "worker", "worker.mjs"));
+    expect([...seen].map((file) => file.split("/").at(-1))).not.toContain("main.mjs");
+    expect([...seen].map((file) => file.split("/").at(-1))).not.toContain("unpack.mjs");
+    expect(code).not.toMatch(/readFileSync|writeFileSync|mkdirSync|\.fsp\./);
+    expect(code).not.toContain("needs at least one spec");
+    expect(code).not.toContain("a symlink that leads nowhere");
+  });
   for (const format of ["esm", "cjs"] as const) {
     it(`starts every worker from an app's ${format} bundle`, async () => {
       const pools = await bundled(format);

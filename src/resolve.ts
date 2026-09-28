@@ -695,7 +695,11 @@ export function declaredWorkspaces(manifest: RootManifest): string[] | undefined
  * it can only ever be inside an optional subtree, which is npm's rule for what may vanish.
  */
 export function filterPlatform(resolution: Resolution, target?: Platform): Resolution {
-  const platform = target ?? currentPlatform();
+  return filterPlatformForTarget(resolution, target ?? currentPlatform());
+}
+
+/** Filter against an explicit target when there is no host platform to inspect. */
+export function filterPlatformForTarget(resolution: Resolution, platform: Platform): Resolution {
   const warnings = new Set(resolution.warnings);
   const gone = new Map<string, string>(); // key -> why, so a parent can say what it lost
   const drop = (key: string, why: string): void => {

@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  carryPackageLockEntries,
   fromPackageLock,
   formatPackageLock,
   parsePackageLock,
@@ -33,6 +34,50 @@ describe("npm v3 package locks", () => {
       expect(placement.size).toBe(Object.keys(lock.packages).length - 1);
       expect(formatPackageLock(toPackageLock(resolution, placement, manifest))).toBe(text);
     });
+  for (const name of cases)
+    it(`recomputes ${name} flags from placements`, async () => {
+      const text = await fixture(name, "package-lock.json");
+      const manifest = JSON.parse(await fixture(name, "package.json"));
+      const lock = parsePackageLock(text);
+      const { resolution, placement } = fromPackageLock(lock, manifest);
+      const withoutFlags = { ...resolution };
+      carryPackageLockEntries(resolution, withoutFlags);
+
+      const written = toPackageLock(withoutFlags, placement, manifest);
+      for (const [path, entry] of Object.entries(lock.packages)) {
+        if (!path) continue;
+        const flags = ({ dev, optional, devOptional, peer }: typeof entry) => ({
+          dev,
+          optional,
+          devOptional,
+          peer,
+        });
+        expect(flags(written.packages[path]!)).toEqual(flags(entry));
+      }
+      expect(formatPackageLock(written)).toBe(text);
+    });
+  it("marks root peers and optional peers from their edge types", () => {
+    const manifest = {
+      peerDependencies: { host: "1.0.0", addon: "1.0.0" },
+      peerDependenciesMeta: { addon: { optional: true } },
+    };
+    const lock = parsePackageLock(
+      JSON.stringify({
+        lockfileVersion: 3,
+        packages: {
+          "": manifest,
+          "node_modules/host": { version: "1.0.0" },
+          "node_modules/addon": { version: "1.0.0" },
+        },
+      }),
+    );
+    const { resolution, placement } = fromPackageLock(lock, manifest);
+    const written = toPackageLock({ ...resolution }, placement, manifest).packages;
+    expect(written["node_modules/host"]?.peer).toBe(true);
+    expect(written["node_modules/host"]?.optional).toBeUndefined();
+    expect(written["node_modules/addon"]?.peer).toBe(true);
+    expect(written["node_modules/addon"]?.optional).toBe(true);
+  });
   it("rejects old and malformed locks", () => {
     for (const text of ["{", "{}", '{"lockfileVersion":2,"packages":{}}'])
       expect(() => parsePackageLock(text)).toThrowError(expect.objectContaining({ code: "ELOCK" }));

@@ -1,6 +1,18 @@
 /** Errors from the portable npm lock and placement APIs. */
 export class UpmError extends Error {
-  code: "ELOCK" | "ELOCKSTALE" | "EPLACE" | (string & {});
+  code:
+    | "ELOCK"
+    | "ELOCKSTALE"
+    | "ENOLOCK"
+    | "EFOREIGNLOCK"
+    | "ENOTFOUND"
+    | "EINTEGRITY"
+    | "ELIMIT"
+    | "EPLATFORM"
+    | "EREGISTRY"
+    | "EABORT"
+    | "EPLACE"
+    | (string & {});
   detail?: Record<string, unknown>;
 
   constructor(

@@ -23,6 +23,8 @@ jobs:
         run: npm run typecheck
       - if: runner.os == 'Linux'
         run: npx vitest --coverage
+      - if: runner.os == 'Linux'
+        run: npm run test:workerd
       # Through npx, so the shell has to find the bin: a `.cmd` shim on Windows.
       - if: runner.os != 'Linux'
         run: npx vitest run

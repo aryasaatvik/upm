@@ -203,11 +203,126 @@ export function fromPackageLock(
   return { resolution, placement };
 }
 
+/** Carry npm's static path metadata, leaving topology flags to the new resolution. */
+export function carryPackageLockEntries(from: Resolution, to: Resolution): void {
+  const entries = metadata.get(from);
+  if (!entries) return;
+  metadata.set(
+    to,
+    new Map(
+      [...entries].map(([path, entry]) => {
+        const staticEntry = { ...entry };
+        delete staticEntry.dev;
+        delete staticEntry.optional;
+        delete staticEntry.devOptional;
+        delete staticEntry.peer;
+        return [path, staticEntry];
+      }),
+    ),
+  );
+}
+
 /** Original locations are the best stable choice when an npm lock supplied this graph. */
 export function npmPlacement(resolution: Resolution): Placement | undefined {
   const entries = metadata.get(resolution);
   if (!entries) return undefined;
   return new Map([...entries].map(([path, entry]) => [path, `${pathName(path)}@${entry.version}`]));
+}
+
+type DependencyFlags = Required<
+  Pick<PackageLockEntry, "dev" | "optional" | "devOptional" | "peer">
+>;
+
+/** npm marks a placement by every root-to-package route, including peer and optional edges. */
+function dependencyFlags(
+  resolution: Resolution,
+  placement: Placement,
+  manifest: PackageJson,
+): Map<string, Partial<DependencyFlags>> {
+  const full = (): DependencyFlags => ({
+    dev: true,
+    optional: true,
+    devOptional: true,
+    peer: true,
+  });
+  const flags = new Map([...placement.keys()].map((path) => [path, full()]));
+  const root: DependencyFlags = { dev: false, optional: false, devOptional: false, peer: false };
+  const location = (from: string, name: string, peer: boolean): string | undefined => {
+    const parent = from.lastIndexOf("/node_modules/");
+    const start = peer ? (parent >= 0 ? from.slice(0, parent) : "") : from;
+    for (let dir = start; ;) {
+      const path = `${dir ? `${dir}/` : ""}node_modules/${name}`;
+      if (placement.has(path)) return path;
+      if (!dir) return undefined;
+      const at = dir.lastIndexOf("/node_modules/");
+      dir = at < 0 ? "" : dir.slice(0, at);
+    }
+  };
+  const queue = [""];
+  while (queue.length > 0) {
+    const from = queue.pop()!;
+    const current = from ? flags.get(from)! : root;
+    const pkg = from ? resolution.packages[placement.get(from)!] : undefined;
+    const edges = from
+      ? { ...pkg?.dependencies, ...pkg?.optionalDependencies }
+      : resolution.root.dependencies;
+    for (const [name, version] of Object.entries(edges)) {
+      const rootDev = name in (manifest.devDependencies ?? {});
+      const rootOptional = !rootDev && name in (manifest.optionalDependencies ?? {});
+      const rootPeer =
+        !rootDev &&
+        !rootOptional &&
+        !(name in (manifest.dependencies ?? {})) &&
+        name in (manifest.peerDependencies ?? {});
+      const peer = from ? name in (pkg?.peers ?? {}) : rootPeer;
+      const dev = !from && rootDev;
+      const optional = from
+        ? name in (pkg?.optionalDependencies ?? {})
+        : rootOptional || (rootPeer && manifest.peerDependenciesMeta?.[name]?.optional === true);
+      const path = location(from, name, peer);
+      if (!path || placement.get(path) !== `${name}@${version}`) continue;
+      const target = flags.get(path)!;
+      let changed = false;
+      if (target.dev && !current.dev && !dev) {
+        target.dev = false;
+        changed = true;
+      }
+      if (target.optional && !current.optional && !optional) {
+        target.optional = false;
+        changed = true;
+      }
+      if (
+        target.devOptional &&
+        !current.devOptional &&
+        !current.dev &&
+        !current.optional &&
+        !dev &&
+        !optional
+      ) {
+        target.devOptional = false;
+        changed = true;
+      }
+      if (target.peer && !current.peer && !peer) {
+        target.peer = false;
+        changed = true;
+      }
+      if (changed) queue.push(path);
+    }
+  }
+  return new Map(
+    [...flags].map(([path, flag]) => {
+      if (flag.dev || flag.optional) flag.devOptional = false;
+      return [
+        path,
+        {
+          ...(flag.dev && { dev: true }),
+          ...(flag.optional && { optional: true }),
+          ...(flag.devOptional && { devOptional: true }),
+          ...(flag.peer && { peer: true }),
+        },
+      ];
+    }),
+  );
 }
 
 export function toPackageLock(
@@ -216,6 +331,7 @@ export function toPackageLock(
   manifest: PackageJson,
 ): PackageLock {
   const source = metadata.get(resolution);
+  const flags = dependencyFlags(resolution, placement, manifest);
   const packages: Record<string, PackageLockEntry> = {};
   const bin = normalizeBin(manifest);
   const license =
@@ -253,6 +369,8 @@ export function toPackageLock(
     ...(Object.keys(bin).length && { bin }),
     ...(manifest.deprecated && { deprecated: manifest.deprecated }),
   };
+  for (const group of [...groups, "peerDependencies", "peerDependenciesMeta"] as const)
+    if (!manifest[group]) delete packages[""][group];
   for (const [path, key] of placement) {
     const pkg = resolution.packages[key];
     if (!pkg) throw new UpmError("EPLACE", `placement refers to absent package ${key}`);
@@ -263,7 +381,12 @@ export function toPackageLock(
       key === `${pathName(path)}@${original.version}` &&
       (original.integrity ?? "") === pkg.integrity
     ) {
-      packages[path] = original;
+      const staticEntry = { ...original };
+      delete staticEntry.dev;
+      delete staticEntry.optional;
+      delete staticEntry.devOptional;
+      delete staticEntry.peer;
+      packages[path] = { ...staticEntry, ...flags.get(path) };
       continue;
     }
     const ownDependencies = { ...pkg.dependencies };
@@ -276,8 +399,7 @@ export function toPackageLock(
       ...(pkg.resolved && { resolved: pkg.resolved }),
       ...(pkg.integrity && { integrity: pkg.integrity }),
       ...(extra?.hasInstallScript && { hasInstallScript: true }),
-      ...(pkg.dev && { dev: true }),
-      ...(pkg.optional && { optional: true }),
+      ...flags.get(path),
       ...(extra?.deprecated && { deprecated: extra.deprecated }),
       ...(extra?.license && { license: extra.license }),
       ...(Object.keys(ownDependencies).length && { dependencies: ownDependencies }),

@@ -19,6 +19,7 @@ async function loadWithout<T>(globals: string[], path: string): Promise<T> {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.resetModules();
 });
@@ -127,7 +128,12 @@ describe("without Node", () => {
       vi.unstubAllGlobals();
     }
     // Prove the route. (Node's DecompressionStream wraps zlib itself, so only this spy can.)
-    const inflate = vi.spyOn(globalThis, "DecompressionStream");
+    const NativeDecompressionStream = globalThis.DecompressionStream;
+    const inflate = vi
+      .spyOn(globalThis, "DecompressionStream")
+      .mockImplementation(function (format) {
+        return new NativeDecompressionStream(format);
+      });
     const header = Buffer.alloc(512);
     header.write("package/a.js", 0, "ascii");
     header.write("0000644\0", 100, "ascii");
@@ -206,7 +212,12 @@ describe("without Node", () => {
     const expected = await node.shortHash("key");
     vi.resetModules();
     const subtle = vi.spyOn(crypto.subtle, "digest");
-    const inflate = vi.spyOn(globalThis, "DecompressionStream");
+    const NativeDecompressionStream = globalThis.DecompressionStream;
+    const inflate = vi
+      .spyOn(globalThis, "DecompressionStream")
+      .mockImplementation(function (format) {
+        return new NativeDecompressionStream(format);
+      });
     vi.stubGlobal("process", shim);
     try {
       const web = await import("../src/runtime.ts");
