@@ -1,3 +1,9 @@
+## @aryasaatvik/upm@0.1.1
+
+### Harden npm v3 lock handling
+
+Normalize scalar platform fields, preserve legacy engines, handle absent optional edges, and reject unsupported package sources before fetching. Cover nested shadows and scoped package paths.
+
 ## @aryasaatvik/upm@0.1.0
 
 ### Start the upm fork for Cloudflare Workers
