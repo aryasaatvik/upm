@@ -14,6 +14,8 @@ export interface TarEntry {
 }
 
 export interface TarOptions {
+  /** Called for a regular file after its header is checked, before its body is buffered. */
+  onHeader?(path: string, size: number): void;
   /**
    * Asked before each file body is read. A consumer takes the file's bytes chunk by chunk as
    * they inflate, and the entry then arrives with empty `data`; undefined buffers the file.
@@ -96,6 +98,7 @@ export async function* extractTar(
       await body(read, size); // skipped, but its bytes are still in the way
       continue;
     }
+    options.onHeader?.(path, size);
     const mode = normalizeMode(num(header, 100, 8));
     const sink = size > 0 ? options.stream?.(path, mode, size) : undefined;
     const data = sink ? await body(read, size, sink) : await body(read, size);

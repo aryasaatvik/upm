@@ -1,3 +1,4 @@
+import { gzipSync, gunzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { materialize } from "../src/materialize.ts";
 import type { MaterializeInput } from "../src/materialize.ts";
@@ -142,6 +143,30 @@ describe("materialize", () => {
     await expect(materialize(input)).rejects.toMatchObject({
       code: "ELIMIT",
       detail: { limit, max },
+    });
+  });
+
+  it("rejects a large declared entry from its header before reading its body", async () => {
+    const tar = Buffer.from(gunzipSync(archive));
+    const declared = 20_000_000;
+    tar.write(`${declared.toString(8).padStart(11, "0")}\0`, 124, 12, "ascii");
+    tar.fill(0x20, 148, 156);
+    let checksum = 0;
+    for (const byte of tar.subarray(0, 512)) checksum += byte;
+    tar.write(`${checksum.toString(8).padStart(6, "0")}\0 `, 148, 8, "ascii");
+    const bomb = gzipSync(tar);
+    const graph = JSON.parse(lock);
+    graph.packages["node_modules/a"].integrity = hashOf(bomb);
+    const fetcher: typeof fetch = async () => new Response(Buffer.from(bomb));
+    const input = setup({ lock: JSON.stringify(graph), fetch: fetcher }).input;
+
+    await expect(materialize({ ...input, limits: { unpackedBytes: 8 } })).rejects.toMatchObject({
+      code: "ELIMIT",
+      detail: { limit: "unpackedBytes", value: declared },
+    });
+    await expect(materialize({ ...input, limits: { files: 0 } })).rejects.toMatchObject({
+      code: "ELIMIT",
+      detail: { limit: "files", value: 1 },
     });
   });
 

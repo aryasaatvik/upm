@@ -218,13 +218,19 @@ export async function materialize(input: MaterializeInput): Promise<{
       async function* source() {
         yield bytes;
       }
-      for await (const entry of extractTar(source())) {
+      let includeEntry = true;
+      for await (const entry of extractTar(source(), {
+        onHeader(path, size) {
+          abort();
+          charge("unpackedBytes", unpackedBytes + size, limits.unpackedBytes);
+          includeEntry = input.include?.(path) ?? true;
+          if (includeEntry) charge("files", fileCount + 1, limits.files);
+        },
+      })) {
         abort();
         unpackedBytes += entry.size;
-        charge("unpackedBytes", unpackedBytes, limits.unpackedBytes);
-        if (input.include && !input.include(entry.path)) continue;
+        if (!includeEntry) continue;
         fileCount++;
-        charge("files", fileCount, limits.files);
         files[`${path}/${entry.path}`] = entry.data;
       }
     });
