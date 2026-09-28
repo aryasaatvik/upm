@@ -81,6 +81,20 @@ describe("npm v3 package locks", () => {
     expect(formatPackageLock(toPackageLock(resolution, placement, manifest))).toBe(text);
   });
 
+  it("carries a legacy engines array byte for byte", () => {
+    const manifest = { dependencies: { old: "1.0.0" } };
+    const text = formatPackageLock({
+      lockfileVersion: 3,
+      requires: true,
+      packages: {
+        "": manifest,
+        "node_modules/old": { version: "1.0.0", engines: ["node >= 0.8.0"] },
+      },
+    });
+    const { resolution, placement } = fromPackageLock(parsePackageLock(text), manifest);
+    expect(formatPackageLock(toPackageLock(resolution, placement, manifest))).toBe(text);
+  });
+
   it("marks root peers and optional peers from their edge types", () => {
     const manifest = {
       peerDependencies: { host: "1.0.0", addon: "1.0.0" },

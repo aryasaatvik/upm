@@ -18,7 +18,7 @@ export interface PackageLockEntry {
   peerDependencies?: Record<string, string>;
   peerDependenciesMeta?: Record<string, { optional?: boolean }>;
   bin?: string | Record<string, string>;
-  engines?: Record<string, string>;
+  engines?: Record<string, string> | string[];
   os?: string[] | string;
   cpu?: string[] | string;
   libc?: string[] | string;
