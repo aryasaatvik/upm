@@ -29,7 +29,14 @@ function setup(overrides: Partial<MaterializeInput> = {}) {
   };
   return {
     calls,
-    input: { manifest, lock, fetch: fetcher, platform: "none" as const, ...overrides },
+    input: {
+      manifest,
+      lock,
+      registry: "https://registry.test",
+      fetch: fetcher,
+      platform: "none" as const,
+      ...overrides,
+    },
   };
 }
 
@@ -43,6 +50,66 @@ describe("materialize", () => {
       "module.exports = 1",
     );
     expect(result.packages).toBe(1);
+  });
+
+  it("refuses tarballs outside the allowed registry before fetching", async () => {
+    for (const resolved of ["https://internal.test/a.tgz", "http://registry.test/a.tgz"]) {
+      const graph = JSON.parse(lock);
+      graph.packages["node_modules/a"].resolved = resolved;
+      const { calls, input } = setup({ lock: JSON.stringify(graph) });
+      await expect(materialize(input)).rejects.toMatchObject({
+        code: "ELOCK",
+        detail: { key: "node_modules/a", resolved },
+      });
+      expect(calls).toEqual([]);
+    }
+  });
+
+  it("requires the configured registry path prefix", async () => {
+    const { input } = setup({ registries: ["https://registry.test/packages/"] });
+    await expect(materialize(input)).rejects.toMatchObject({
+      code: "ELOCK",
+      detail: { key: "node_modules/a", resolved: "https://registry.test/a.tgz" },
+    });
+  });
+
+  it("checks each redirect and accepts only listed registry paths", async () => {
+    const denied = setup({
+      fetch: async (_request, init) => {
+        expect(init?.redirect).toBe("manual");
+        return new Response(null, {
+          status: 302,
+          headers: { location: "https://internal.test/a.tgz" },
+        });
+      },
+    });
+    await expect(materialize(denied.input)).rejects.toMatchObject({
+      code: "ELOCK",
+      detail: { key: "node_modules/a", resolved: "https://internal.test/a.tgz" },
+    });
+
+    const calls: string[] = [];
+    const allowed = setup({
+      fetch: async (request, init) => {
+        expect(init?.redirect).toBe("manual");
+        calls.push(String(request));
+        return calls.length === 1
+          ? new Response(null, { status: 302, headers: { location: "/tarballs/a.tgz" } })
+          : new Response(Buffer.from(archive));
+      },
+    });
+    expect((await materialize(allowed.input)).packages).toBe(1);
+    expect(calls).toEqual(["https://registry.test/a.tgz", "https://registry.test/tarballs/a.tgz"]);
+  });
+
+  it("allows HTTP only when its registry is explicitly listed", async () => {
+    const graph = JSON.parse(lock);
+    graph.packages["node_modules/a"].resolved = "http://registry.test/a.tgz";
+    const { input } = setup({
+      lock: JSON.stringify(graph),
+      registries: ["http://registry.test"],
+    });
+    expect((await materialize(input)).packages).toBe(1);
   });
 
   it("uses a verified hit and replaces a corrupt hit, ignoring cache write failure", async () => {

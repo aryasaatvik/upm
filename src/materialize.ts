@@ -20,6 +20,8 @@ export interface MaterializeInput {
   manifest: PackageJson;
   lock: string;
   registry?: string;
+  /** Allowed tarball registry bases; defaults to registry or the public npm registry. */
+  registries?: string[];
   fetch?: typeof fetch;
   tarballCache?: TarballCache;
   include?: (path: string) => boolean;
@@ -78,6 +80,32 @@ export async function materialize(input: MaterializeInput): Promise<{
   let next = 0;
   let unpacking: Promise<unknown> = Promise.resolve();
   const fetched = new Map<string, Promise<Uint8Array>>();
+  const registries = (input.registries ?? [input.registry ?? "https://registry.npmjs.org"]).map(
+    (registry) => new URL(registry),
+  );
+  const allowedUrl = (key: string, resolved: string): string => {
+    let url: URL;
+    try {
+      url = new URL(resolved);
+    } catch {
+      throw new UpmError("ELOCK", `invalid tarball URL for ${key}`, { key, resolved });
+    }
+    const allowed = registries.some((registry) => {
+      const prefix = registry.pathname.endsWith("/") ? registry.pathname : `${registry.pathname}/`;
+      return (
+        (url.protocol === "https:" ||
+          (url.protocol === "http:" && registry.protocol === "http:")) &&
+        url.origin === registry.origin &&
+        url.pathname.startsWith(prefix)
+      );
+    });
+    if (!allowed)
+      throw new UpmError("ELOCK", `tarball URL is outside allowed registries for ${key}`, {
+        key,
+        resolved,
+      });
+    return url.href;
+  };
 
   const verified = async (bytes: Uint8Array, integrity: string): Promise<boolean> => {
     try {
@@ -91,6 +119,7 @@ export async function materialize(input: MaterializeInput): Promise<{
   };
 
   const archive = (path: string, resolved: string, integrity: string): Promise<Uint8Array> => {
+    const url = allowedUrl(path, resolved);
     const existing = fetched.get(integrity);
     if (existing) return existing;
     const task = (async () => {
@@ -115,14 +144,29 @@ export async function materialize(input: MaterializeInput): Promise<{
         return cached;
       }
       const corruptCache = cached !== undefined;
-      if (!/^https?:\/\//.test(resolved))
-        throw new UpmError("ELOCK", `missing tarball URL for ${path}`);
       let response: Response;
-      try {
-        response = await fetcher(resolved, { signal: input.signal });
-      } catch (error) {
-        abort();
-        throw new UpmError("EREGISTRY", `cannot fetch ${path}: ${(error as Error).message}`);
+      let nextUrl = url;
+      for (let redirects = 0; ; redirects++) {
+        try {
+          response = await fetcher(nextUrl, { signal: input.signal, redirect: "manual" });
+        } catch (error) {
+          abort();
+          throw new UpmError("EREGISTRY", `cannot fetch ${path}: ${(error as Error).message}`);
+        }
+        if (response.status < 300 || response.status >= 400) break;
+        const location = response.headers.get("location");
+        if (!location || redirects === 5)
+          throw new UpmError("EREGISTRY", `cannot follow tarball redirect for ${path}`);
+        let target: string;
+        try {
+          target = new URL(location, nextUrl).href;
+        } catch {
+          throw new UpmError("ELOCK", `invalid tarball redirect for ${path}`, {
+            key: path,
+            resolved: location,
+          });
+        }
+        nextUrl = allowedUrl(path, target);
       }
       if (!response.ok)
         throw new UpmError("EREGISTRY", `cannot fetch ${path}: HTTP ${response.status}`);
