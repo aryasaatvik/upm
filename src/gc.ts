@@ -3,7 +3,7 @@
 // refcount survives neither a second upm running nor `rm -rf node_modules`.
 import { builtin } from "./builtin.ts";
 import { createStore, isIndex } from "./store.ts";
-import { alive, exists, list, rmIfExists } from "./util.ts";
+import { alive, exists, list } from "./util.ts";
 import type { PackageIndex } from "./store.ts";
 
 export interface EntrySweep {
@@ -169,7 +169,7 @@ async function remove(path: string, recursive: boolean): Promise<void> {
   try {
     // force: a concurrent GC winning the race is fine. Windows fails the loser with EPERM
     // while the winner's delete is still pending, so retry until it is gone.
-    await rmIfExists(path, { recursive, force: true, maxRetries: 3 });
+    await builtin.fsp.rm(path, { recursive, force: true, maxRetries: 3 });
   } catch (error) {
     if (!(await exists(path))) return;
     const { message } = error as Error;
