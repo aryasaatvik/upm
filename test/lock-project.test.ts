@@ -37,7 +37,7 @@ describe("lockProject", () => {
       manifest,
       lock,
       mode: "update",
-      registry: "https://registry.test",
+      registry: "https://registry.npmjs.org",
       fetch: () => {
         throw new Error("unchanged update must use locked versions");
       },
@@ -89,7 +89,7 @@ describe("lockProject", () => {
         manifest,
         lock: JSON.stringify(graph),
         mode: "update",
-        registry: "https://registry.test",
+        registry: "https://registry.npmjs.org",
         fetch: async () => {
           fetched = true;
           throw new Error("unexpected fetch");
@@ -103,6 +103,39 @@ describe("lockProject", () => {
     expect(fetched).toBe(false);
   });
 
+  it("refuses a public npm tarball when only a custom registry is configured", async () => {
+    const manifest = JSON.parse(await fixture("nested", "package.json"));
+    const lock = await fixture("nested", "package-lock.json");
+    const key = "node_modules/ansi-regex";
+    const resolved = parsePackageLock(lock).packages[key]!.resolved;
+    let fetched = false;
+    await expect(
+      lockProject({
+        manifest,
+        lock,
+        mode: "update",
+        registry: "https://registry.test",
+        fetch: async () => {
+          fetched = true;
+          throw new Error("unexpected fetch");
+        },
+      }),
+    ).rejects.toMatchObject({ code: "ELOCK", detail: { key, resolved, kind: "registry" } });
+    expect(fetched).toBe(false);
+    await expect(
+      materialize({
+        manifest,
+        lock,
+        registry: "https://registry.test",
+        fetch: async () => {
+          fetched = true;
+          throw new Error("unexpected fetch");
+        },
+      }),
+    ).rejects.toMatchObject({ code: "ELOCK", detail: { key, resolved, kind: "registry" } });
+    expect(fetched).toBe(false);
+  });
+
   it("updates one direct package while keeping unrelated versions and placements", async () => {
     const manifest = JSON.parse(await fixture("nested", "package.json"));
     const lock = await fixture("nested", "package-lock.json");
@@ -111,7 +144,7 @@ describe("lockProject", () => {
       manifest,
       lock,
       mode: "update",
-      registry: "https://registry.test",
+      registry: "https://registry.npmjs.org",
       fetch: () => {
         throw new Error("locked versions should suffice");
       },

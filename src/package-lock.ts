@@ -64,7 +64,7 @@ export function lookup(placement: Placement, from: string, name: string): string
 
 /** Only registry tarballs can be installed from the portable npm lock API. */
 export function supportedResolved(key: string, resolved: string, registries: string[]): string {
-  const kind = /^(?:git(?:\+[^:]+)?:|github:)/i.test(resolved)
+  let kind = /^(?:git(?:\+[^:]+)?:|github:)/i.test(resolved)
     ? "git"
     : /^file:/i.test(resolved)
       ? "file"
@@ -89,7 +89,10 @@ export function supportedResolved(key: string, resolved: string, registries: str
       url.pathname.startsWith(prefix)
     );
   });
-  if (!allowed) refusal("tarball outside allowed registries");
+  if (!allowed) {
+    if (url.origin === "https://registry.npmjs.org") kind = "registry";
+    refusal("tarball outside allowed registries");
+  }
   return url.href;
 }
 

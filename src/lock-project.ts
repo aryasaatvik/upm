@@ -67,10 +67,7 @@ export async function lockProject(
     for (const [path, entry] of Object.entries(packages)) {
       if (!path || !entry.resolved) continue;
       const name = entry.name ?? path.slice(path.lastIndexOf("node_modules/") + 13);
-      supportedResolved(path, entry.resolved, [
-        registry.baseFor(name),
-        "https://registry.npmjs.org",
-      ]);
+      supportedResolved(path, entry.resolved, [registry.baseFor(name)]);
     }
   };
   let previous;
